@@ -20,11 +20,9 @@ async function sql(query, params) {
   if (!url) throw new Error("No DATABASE_URL");
   var u = new URL(url);
   var endpoint = "https://" + u.hostname + "/sql";
-  var creds = u.username + ":" + decodeURIComponent(u.password);
-  var auth = "Basic " + Buffer.from(creds).toString("base64");
   var res = await fetch(endpoint, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "Authorization": auth, "Neon-Connection-String": url, "Neon-Raw-Text-Output": "true", "Neon-Array-Mode": "false" },
+    headers: { "Content-Type": "application/json", "Neon-Connection-String": url, "Neon-Raw-Text-Output": "true", "Neon-Array-Mode": "false" },
     body: JSON.stringify({ query: query, params: params || [] })
   });
   if (!res.ok) { var t = await res.text(); throw new Error("DB " + res.status + ": " + t.substring(0, 200)); }
