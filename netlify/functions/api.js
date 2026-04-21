@@ -48,7 +48,7 @@ exports.handler = async function (event) {
   var dbUrl = getDbUrl();
   if (!dbUrl) return json({ error: "No DATABASE_URL" }, 500);
 
-  var path = event.path.replace("/.netlify/functions/api", "").replace(/^\/+/, "");
+  var path = (event.path || "").replace("/.netlify/functions/api", "").replace(/^\/api\//, "").replace(/^\/+/, "");
   var method = event.httpMethod;
   var body = {};
   try { if (event.body) body = JSON.parse(event.body); } catch (e) {}
