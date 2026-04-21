@@ -1,21 +1,7 @@
 // netlify/functions/api.mjs
 // Pointeuse IziShip — API Backend
-// Stack: Netlify Functions + Neon PostgreSQL (@neondatabase/serverless)
 
 import { Pool } from "@neondatabase/serverless";
-
-const dbUrl = process.env.DATABASE_URL || process.env.NETLIFY_DATABASE_URL || "";
-console.log("DB URL:", dbUrl ? "found" : "MISSING");
-
-let pool = null;
-try { if (dbUrl) pool = new Pool({ connectionString: dbUrl }); }
-catch (e) { console.error("Pool error:", e.message); }
-
-async function q(text, params) {
-  const res = await pool.query(text, params || []);
-  return res.rows;
-}
-async function q1(text, params) { return (await q(text, params))[0] || null; }
 
 const H = {
   "Content-Type": "application/json",
@@ -26,9 +12,35 @@ const H = {
 function json(d, s) { return { statusCode: s || 200, headers: H, body: JSON.stringify(d) }; }
 function err(m, s) { return json({ error: m }, s || 400); }
 
+let _pool = null;
+function getPool() {
+  if (_pool) return _pool;
+  const url = process.env.DATABASE_URL || process.env.NETLIFY_DATABASE_URL || "";
+  if (!url) return null;
+  _pool = new Pool({ connectionString: url });
+  return _pool;
+}
+
+async function q(text, params) {
+  const pool = getPool();
+  if (!pool) throw new Error("No DATABASE_URL");
+  const res = await pool.query(text, params || []);
+  return res.rows;
+}
+async function q1(text, params) { return (await q(text, params))[0] || null; }
+
 export default async function handler(event) {
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: H };
-  if (!pool) return json({ error: "DATABASE_URL manquante" }, 500);
+
+  try {
+    const pool = getPool();
+    if (!pool) {
+      const envKeys = Object.keys(process.env).filter(k => k.includes("DATABASE") || k.includes("NEON") || k.includes("POSTGRES") || k.includes("PG"));
+      return json({ error: "No DATABASE_URL found", envKeys }, 500);
+    }
+  } catch(e) {
+    return json({ error: "Pool creation failed: " + e.message }, 500);
+  }
 
   const path = event.path.replace("/.netlify/functions/api", "").replace(/^\/+/, "");
   const method = event.httpMethod;
@@ -38,7 +50,7 @@ export default async function handler(event) {
   const qs = event.queryStringParameters || {};
 
   try {
-    if (method === "POST" && path === "init") { await initDB(); return json({ ok: true, message: "Base de donnees initialisee" }); }
+    if (method === "POST" && path === "init") { await initDB(); return json({ ok: true, message: "DB initialized" }); }
     if (method === "POST" && path === "auth/login") return await handleLogin(body);
     if (method === "POST" && path === "auth/change-password") return await handleChangePwd(body);
 
@@ -65,7 +77,7 @@ export default async function handler(event) {
       if (date) return json(await q("SELECT r.*, w.type as worker_type FROM records r JOIN workers w ON r.worker_id=w.id WHERE r.date=$1 ORDER BY w.type, r.arrival", [date]));
       if (from && to && workerId) return json(await q("SELECT r.*, w.type as worker_type FROM records r JOIN workers w ON r.worker_id=w.id WHERE r.date>=$1 AND r.date<=$2 AND r.worker_id=$3 ORDER BY r.date, r.arrival", [from, to, parseInt(workerId)]));
       if (from && to) return json(await q("SELECT r.*, w.type as worker_type FROM records r JOIN workers w ON r.worker_id=w.id WHERE r.date>=$1 AND r.date<=$2 ORDER BY r.date, w.type, r.arrival", [from, to]));
-      const today = new Date().toISOString().slice(0, 10);
+      const today = new Date().toISOString().slice(0,10);
       return json(await q("SELECT r.*, w.type as worker_type FROM records r JOIN workers w ON r.worker_id=w.id WHERE r.date=$1 ORDER BY w.type, r.arrival", [today]));
     }
     if (method === "POST" && path === "records") {
@@ -110,7 +122,7 @@ export default async function handler(event) {
     return err("Route: " + path, 404);
   } catch (e) {
     console.error("API Error:", e);
-    return json({ error: e.message }, 500);
+    return json({ error: e.message, stack: e.stack?.split("\n").slice(0,3) }, 500);
   }
 }
 
@@ -129,10 +141,10 @@ async function initDB() {
     id SERIAL PRIMARY KEY, name VARCHAR(255) NOT NULL, location VARCHAR(255) DEFAULT '',
     created_at TIMESTAMP DEFAULT NOW())`);
   await q(`CREATE TABLE IF NOT EXISTS settings (key VARCHAR(100) PRIMARY KEY, value TEXT NOT NULL)`);
-  if (!(await q1("SELECT value FROM settings WHERE key='admin_password'")))
-    await q("INSERT INTO settings (key,value) VALUES ('admin_password','admin')");
-  if (!(await q1("SELECT value FROM settings WHERE key='qr_secret'")))
-    await q("INSERT INTO settings (key,value) VALUES ('qr_secret',$1)", [genSecret()]);
+  const pwd = await q1("SELECT value FROM settings WHERE key='admin_password'");
+  if (!pwd) await q("INSERT INTO settings (key,value) VALUES ('admin_password','admin')");
+  const qrs = await q1("SELECT value FROM settings WHERE key='qr_secret'");
+  if (!qrs) await q("INSERT INTO settings (key,value) VALUES ('qr_secret',$1)", [genSecret()]);
   await q("CREATE INDEX IF NOT EXISTS idx_records_date ON records(date)");
   await q("CREATE INDEX IF NOT EXISTS idx_records_worker ON records(worker_id)");
   await q("CREATE INDEX IF NOT EXISTS idx_workers_badge ON workers(badge)");
@@ -182,9 +194,9 @@ async function handleScan(body) {
       return json({ action: "invalid_qr" });
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Date().toISOString().slice(0,10);
   const now = new Date();
-  const timeNow = String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0");
+  const timeNow = String(now.getHours()).padStart(2,"0") + ":" + String(now.getMinutes()).padStart(2,"0");
   const recs = await q("SELECT * FROM records WHERE worker_id=$1 AND date=$2 ORDER BY id DESC LIMIT 1", [worker.id, today]);
   const rec = recs[0];
 
@@ -194,17 +206,17 @@ async function handleScan(body) {
     return json({ action: "arrival", time: timeNow, worker, record: nr });
   }
   const breaks = rec.breaks || [];
-  const lb = breaks.length ? breaks[breaks.length - 1] : null;
+  const lb = breaks.length ? breaks[breaks.length-1] : null;
   if (lb && !lb.end) {
     lb.end = timeNow;
     const up = await q1("UPDATE records SET breaks=$1, updated_at=NOW() WHERE id=$2 RETURNING *", [JSON.stringify(breaks), rec.id]);
     return json({ action: "break_end", time: timeNow, worker, record: up });
   }
-  return json({ action: "choose", time: timeNow, worker, record: rec, options: ["break_start", "departure"] });
+  return json({ action: "choose", time: timeNow, worker, record: rec, options: ["break_start","departure"] });
 }
 
 function genSecret() {
   const c = "abcdefghijklmnopqrstuvwxyz0123456789";
-  let s = ""; for (let i = 0; i < 16; i++) s += c.charAt(Math.floor(Math.random() * c.length));
+  let s = ""; for (let i = 0; i < 16; i++) s += c.charAt(Math.floor(Math.random()*c.length));
   return s;
 }
