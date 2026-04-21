@@ -16,7 +16,7 @@ function err(m, s) { return json({ error: m }, s || 400); }
 let _pool = null;
 function getPool() {
   if (_pool) return _pool;
-  const url = process.env.DATABASE_URL || process.env.NETLIFY_DATABASE_URL || "";
+  const url = process.env.NETLIFY_DATABASE_URL_UNPOOLED || process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL || "";
   if (!url) return null;
   _pool = new Pool({ connectionString: url });
   return _pool;
