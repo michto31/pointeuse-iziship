@@ -22,20 +22,18 @@ async function sql(query, params) {
   var endpoint = "https://" + u.hostname + "/sql";
   var res = await fetch(endpoint, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "Neon-Connection-String": url, "Neon-Raw-Text-Output": "true", "Neon-Array-Mode": "false" },
+    headers: { "Content-Type": "application/json", "Neon-Connection-String": url },
     body: JSON.stringify({ query: query, params: params || [] })
   });
   if (!res.ok) { var t = await res.text(); throw new Error("DB " + res.status + ": " + t.substring(0, 200)); }
   var data = await res.json();
   if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
   var fields = data.fields || [];
-  return (data.rows || []).map(function (row) {
+  var rows = data.rows || [];
+  return rows.map(function (row) {
+    if (!Array.isArray(row)) return row;
     var obj = {};
-    for (var i = 0; i < fields.length; i++) {
-      var val = row[i];
-      if (fields[i].dataTypeID === 114 || fields[i].dataTypeID === 3802) { try { val = JSON.parse(val); } catch (e) {} }
-      obj[fields[i].name] = val;
-    }
+    for (var i = 0; i < fields.length; i++) { obj[fields[i].name] = row[i]; }
     return obj;
   });
 }
