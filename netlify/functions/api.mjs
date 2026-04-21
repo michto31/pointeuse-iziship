@@ -1,7 +1,8 @@
 // netlify/functions/api.mjs
 // Pointeuse IziShip — API Backend
 
-import { Pool } from "@neondatabase/serverless";
+import pg from "pg";
+const { Pool } = pg;
 
 const H = {
   "Content-Type": "application/json",
