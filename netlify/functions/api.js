@@ -148,11 +148,9 @@ async function handleScan(body) {
   return json({ action: "choose", time: timeNow, worker: worker, record: rec, options: ["break_start","departure"] });
 }
 
-// ═══ ASSISTANT RH (Claude AI) ═══
 async function handleAssistant(body) {
   var apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return err("ANTHROPIC_API_KEY non configuree", 500);
-
   var message = body.message;
   if (!message) return err("Message requis");
 
@@ -171,10 +169,10 @@ async function handleAssistant(body) {
   todayRecs.forEach(function(r) {
     var brk = 0;
     if (r.breaks && Array.isArray(r.breaks)) { r.breaks.forEach(function(b) { if (b.start && b.end) { var s = parseInt(b.start.split(":")[0])*60+parseInt(b.start.split(":")[1]); var e = parseInt(b.end.split(":")[0])*60+parseInt(b.end.split(":")[1]); brk += e-s; } }); }
-    context += "- " + r.wname + " (" + r.wtype + "): arr=" + (r.arrival||"?") + " dep=" + (r.departure||"en cours") + " pause=" + brk + "min\n";
+    context += "- " + (r.wname||r.worker_name) + " (" + (r.wtype||"") + "): arr=" + (r.arrival||"?") + " dep=" + (r.departure||"en cours") + " pause=" + brk + "min\n";
   });
 
-  context += "\nPOINTAGES DU MOIS (" + monthRecs.length + " enregistrements):\n";
+  context += "\nSTATISTIQUES DU MOIS:\n";
   var statsPerWorker = {};
   monthRecs.forEach(function(r) {
     if (!r.departure) return;
@@ -213,7 +211,7 @@ async function handleAssistant(body) {
     body: JSON.stringify({
       model: "claude-sonnet-4-20250514",
       max_tokens: 1000,
-      system: "Tu es l'assistant RH de l'entreprise IziShip (logistique). Tu analyses les donnees de pointage et reponds aux questions du directeur en francais. Sois concis, precis et utilise des chiffres. Voici les donnees actuelles:\n\n" + context,
+      system: "Tu es l'assistant RH de l'entreprise IziShip (logistique). Tu analyses les donnees de pointage et reponds aux questions du directeur en francais. Sois concis, precis et utilise des chiffres. Donne des recommandations actionnables. Voici les donnees actuelles:\n\n" + context,
       messages: messages
     })
   });
