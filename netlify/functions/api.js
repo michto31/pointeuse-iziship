@@ -56,6 +56,10 @@ exports.handler = async function (event) {
     if (method === "POST" && path === "auth/login") return await handleLogin(body);
     if (method === "POST" && path === "auth/change-password") return await handleChangePwd(body);
     if (method === "POST" && path === "assistant") return await handleAssistant(body);
+    if (method === "POST" && path === "agent/run") return await handleAgentRun();
+    if (method === "GET" && path === "agent/observations") return json(await sql("SELECT * FROM agent_memory ORDER BY created_at DESC LIMIT 50"));
+    if (method === "POST" && path === "agent/feedback") { await sql("UPDATE agent_memory SET feedback=$1 WHERE id=$2", [body.feedback, body.id]); return json({ ok: true }); }
+    if (method === "GET" && path === "agent/runs") return json(await sql("SELECT * FROM agent_runs ORDER BY run_date DESC LIMIT 20"));
     if (method === "GET" && path === "workers") return json(await sql("SELECT * FROM workers ORDER BY type, name"));
     if (method === "POST" && path === "workers") {
       if (!body.name) return err("Nom requis");
@@ -109,11 +113,14 @@ async function initDB() {
   await sql("CREATE TABLE IF NOT EXISTS records (id SERIAL PRIMARY KEY,worker_id INTEGER REFERENCES workers(id) ON DELETE CASCADE,worker_name VARCHAR(255) DEFAULT '',agency VARCHAR(255) DEFAULT '',date DATE NOT NULL,arrival VARCHAR(5),departure VARCHAR(5),breaks JSONB DEFAULT '[]',created_at TIMESTAMP DEFAULT NOW(),updated_at TIMESTAMP DEFAULT NOW())");
   await sql("CREATE TABLE IF NOT EXISTS postes (id SERIAL PRIMARY KEY,name VARCHAR(255) NOT NULL,location VARCHAR(255) DEFAULT '',created_at TIMESTAMP DEFAULT NOW())");
   await sql("CREATE TABLE IF NOT EXISTS settings (key VARCHAR(100) PRIMARY KEY,value TEXT NOT NULL)");
+  await sql("CREATE TABLE IF NOT EXISTS agent_memory (id SERIAL PRIMARY KEY,type VARCHAR(50) NOT NULL,content TEXT NOT NULL,importance INTEGER DEFAULT 5,feedback VARCHAR(20) DEFAULT 'pending',created_at TIMESTAMP DEFAULT NOW())");
+  await sql("CREATE TABLE IF NOT EXISTS agent_runs (id SERIAL PRIMARY KEY,run_date TIMESTAMP DEFAULT NOW(),observations_count INTEGER DEFAULT 0,actions_taken TEXT DEFAULT '',duration_ms INTEGER DEFAULT 0)");
   if (!(await sql1("SELECT value FROM settings WHERE key='admin_password'"))) await sql("INSERT INTO settings (key,value) VALUES ('admin_password','admin')");
   if (!(await sql1("SELECT value FROM settings WHERE key='qr_secret'"))) await sql("INSERT INTO settings (key,value) VALUES ('qr_secret',$1)", [genSecret()]);
   await sql("CREATE INDEX IF NOT EXISTS idx_records_date ON records(date)");
   await sql("CREATE INDEX IF NOT EXISTS idx_records_worker ON records(worker_id)");
   await sql("CREATE INDEX IF NOT EXISTS idx_workers_badge ON workers(badge)");
+  await sql("CREATE INDEX IF NOT EXISTS idx_agent_memory_type ON agent_memory(type)");
 }
 
 async function handleLogin(body) {
@@ -226,6 +233,154 @@ async function handleAssistant(body) {
   var reply = "";
   if (claudeData.content && claudeData.content.length > 0) { reply = claudeData.content[0].text || ""; }
   return json({ reply: reply });
+}
+
+// ═══ AGENT RH AUTONOME — LE CERVEAU ═══
+async function handleAgentRun() {
+  var startTime = Date.now();
+  var apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return err("ANTHROPIC_API_KEY non configuree", 500);
+
+  var today = new Date().toISOString().slice(0, 10);
+  var weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+  var monthStart = today.substring(0, 8) + "01";
+
+  // 1. Collecter les données fraîches
+  var workers = await sql("SELECT id,name,agency,type,sched_in,sched_out FROM workers ORDER BY type,name");
+  var todayRecs = await sql("SELECT r.*,w.name as wname,w.type as wtype,w.sched_in,w.sched_out FROM records r JOIN workers w ON r.worker_id=w.id WHERE r.date=$1", [today]);
+  var weekRecs = await sql("SELECT r.*,w.name as wname,w.type as wtype,w.sched_in,w.sched_out FROM records r JOIN workers w ON r.worker_id=w.id WHERE r.date>=$1 AND r.date<=$2 ORDER BY r.date", [weekAgo, today]);
+
+  // 2. Lire la mémoire (observations passées + feedback du directeur)
+  var recentMemory = await sql("SELECT type,content,importance,feedback,created_at FROM agent_memory ORDER BY created_at DESC LIMIT 30");
+  var goodMemory = await sql("SELECT type,content,importance,feedback,created_at FROM agent_memory WHERE feedback='good' ORDER BY created_at DESC LIMIT 10");
+
+  // 3. Construire le contexte complet pour le cerveau
+  var context = "=== DONNEES ENTREPRISE IZISHIP AU " + today + " ===\n\n";
+
+  context += "EFFECTIF (" + workers.length + " salaries):\n";
+  var interimCount = 0, cdiCount = 0;
+  workers.forEach(function(w) {
+    if (w.type === "interim") interimCount++;
+    else cdiCount++;
+    context += "- " + w.name + " | " + w.type + " | agence: " + (w.agency||"N/A") + " | horaires prevus: " + w.sched_in + "-" + w.sched_out + "\n";
+  });
+  context += "Total: " + interimCount + " interimaires, " + cdiCount + " CDI/CDD\n";
+
+  context += "\n--- POINTAGES AUJOURD'HUI (" + todayRecs.length + ") ---\n";
+  todayRecs.forEach(function(r) {
+    var brk = 0;
+    if (r.breaks && Array.isArray(r.breaks)) { r.breaks.forEach(function(b) { if (b.start && b.end) { var s = parseInt(b.start.split(":")[0])*60+parseInt(b.start.split(":")[1]); var e = parseInt(b.end.split(":")[0])*60+parseInt(b.end.split(":")[1]); brk += e-s; } }); }
+    var schedIn = parseInt((r.sched_in||"08:00").split(":")[0])*60+parseInt((r.sched_in||"08:00").split(":")[1]);
+    var arrMin = r.arrival ? parseInt(r.arrival.split(":")[0])*60+parseInt(r.arrival.split(":")[1]) : 0;
+    var late = arrMin > schedIn + 5 ? " [RETARD +" + (arrMin - schedIn) + "min]" : "";
+    context += "- " + (r.wname||r.worker_name) + " (" + (r.wtype||"") + "): arr=" + (r.arrival||"?") + late + " dep=" + (r.departure||"en cours") + " pause=" + brk + "min\n";
+  });
+
+  // Stats semaine
+  context += "\n--- STATISTIQUES SEMAINE (7 derniers jours) ---\n";
+  var weekStats = {};
+  weekRecs.forEach(function(r) {
+    if (!r.departure) return;
+    var key = r.wname || r.worker_name || r.worker_id;
+    if (!weekStats[key]) weekStats[key] = { type: r.wtype, days: 0, totalMin: 0, lateCount: 0, overtimeMin: 0, absences: 0, dates: [] };
+    var arr = parseInt(r.arrival.split(":")[0])*60+parseInt(r.arrival.split(":")[1]);
+    var dep = parseInt(r.departure.split(":")[0])*60+parseInt(r.departure.split(":")[1]);
+    var brk = 0;
+    if (r.breaks && Array.isArray(r.breaks)) { r.breaks.forEach(function(b) { if (b.start && b.end) { var s = parseInt(b.start.split(":")[0])*60+parseInt(b.start.split(":")[1]); var e = parseInt(b.end.split(":")[0])*60+parseInt(b.end.split(":")[1]); brk += e-s; } }); }
+    var worked = dep - arr - brk;
+    var schedIn = parseInt((r.sched_in||"08:00").split(":")[0])*60+parseInt((r.sched_in||"08:00").split(":")[1]);
+    var schedOut = parseInt((r.sched_out||"16:00").split(":")[0])*60+parseInt((r.sched_out||"16:00").split(":")[1]);
+    weekStats[key].days++;
+    weekStats[key].totalMin += worked;
+    weekStats[key].dates.push(r.date);
+    if (arr > schedIn + 5) weekStats[key].lateCount++;
+    if (worked > (schedOut - schedIn)) weekStats[key].overtimeMin += worked - (schedOut - schedIn);
+  });
+  Object.keys(weekStats).forEach(function(name) {
+    var s = weekStats[name];
+    context += "- " + name + " (" + s.type + "): " + s.days + " jours, " + Math.floor(s.totalMin/60) + "h" + String(s.totalMin%60).padStart(2,"0") + " total, " + Math.floor(s.overtimeMin/60) + "h" + String(s.overtimeMin%60).padStart(2,"0") + " heures sup, " + s.lateCount + " retards\n";
+  });
+
+  // Absences (salariés sans pointage aujourd'hui)
+  var presentIds = {};
+  todayRecs.forEach(function(r) { presentIds[r.worker_id] = true; });
+  var absent = workers.filter(function(w) { return !presentIds[w.id]; });
+  if (absent.length > 0) {
+    context += "\nABSENTS AUJOURD'HUI: " + absent.map(function(w) { return w.name + " (" + w.type + ")"; }).join(", ") + "\n";
+  }
+
+  // Mémoire
+  context += "\n=== MA MEMOIRE (observations passees) ===\n";
+  if (recentMemory.length === 0) {
+    context += "Aucune observation precedente. C'est ma premiere execution.\n";
+  } else {
+    recentMemory.forEach(function(m) {
+      var fb = m.feedback === "good" ? " [APPROUVE PAR DIRECTEUR]" : m.feedback === "bad" ? " [REJETE PAR DIRECTEUR - ne plus faire ce type d'observation]" : "";
+      context += "- [" + m.type + "] " + m.content.substring(0, 200) + fb + "\n";
+    });
+  }
+
+  if (goodMemory.length > 0) {
+    context += "\nOBSERVATIONS QUE LE DIRECTEUR A APPROUVEES (a reproduire):\n";
+    goodMemory.forEach(function(m) { context += "- " + m.content.substring(0, 150) + "\n"; });
+  }
+
+  // 4. Envoyer au cerveau (Claude) pour raisonnement
+  var claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 2000,
+      system: "Tu es un employe RH autonome chez IziShip (logistique/entreposage). Tu travailles 24h/24 pour le directeur David.\n\nTon role:\n- Analyser les donnees de pointage en continu\n- Detecter les anomalies, tendances, risques\n- Proposer des actions concretes\n- Apprendre du feedback du directeur\n\nREGLES:\n1. Si le directeur a APPROUVE une observation, fais-en plus du meme type\n2. Si le directeur a REJETE une observation, ne refais JAMAIS ce type\n3. Sois proactif — ne te contente pas de decrire, RECOMMANDE des actions\n4. Priorise: retards recurrents, heures sup excessives, absences inexpliquees, desequilibres interim/CDI\n5. Pense comme un vrai RH: cout, risque juridique, bien-etre des salaries\n\nReponds UNIQUEMENT en JSON valide avec cette structure:\n{\n  \"observations\": [\n    {\"type\": \"alerte|tendance|recommandation|rapport\", \"content\": \"texte\", \"importance\": 1-10, \"action_suggested\": \"action concrete ou null\"}\n  ],\n  \"summary\": \"resume en 2 phrases de ta analyse\",\n  \"priority_action\": \"l'action la plus urgente a faire ou null\"\n}",
+      messages: [{ role: "user", content: context }]
+    })
+  });
+
+  if (!claudeRes.ok) {
+    var errText = await claudeRes.text();
+    console.error("Agent Claude error:", errText);
+    return err("Agent error: " + claudeRes.status, 500);
+  }
+
+  var claudeData = await claudeRes.json();
+  var rawReply = "";
+  if (claudeData.content && claudeData.content.length > 0) { rawReply = claudeData.content[0].text || ""; }
+
+  // 5. Parser la réponse et stocker en mémoire
+  var agentResponse;
+  try {
+    var cleaned = rawReply.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+    agentResponse = JSON.parse(cleaned);
+  } catch (e) {
+    agentResponse = { observations: [{ type: "rapport", content: rawReply, importance: 5, action_suggested: null }], summary: rawReply.substring(0, 200), priority_action: null };
+  }
+
+  var obsCount = 0;
+  if (agentResponse.observations && Array.isArray(agentResponse.observations)) {
+    for (var i = 0; i < agentResponse.observations.length; i++) {
+      var obs = agentResponse.observations[i];
+      await sql("INSERT INTO agent_memory (type,content,importance) VALUES ($1,$2,$3)", [obs.type || "observation", (obs.content || "") + (obs.action_suggested ? "\n>> ACTION: " + obs.action_suggested : ""), obs.importance || 5]);
+      obsCount++;
+    }
+  }
+
+  // Stocker le résumé
+  if (agentResponse.summary) {
+    await sql("INSERT INTO agent_memory (type,content,importance) VALUES ($1,$2,$3)", ["resume_run", agentResponse.summary + (agentResponse.priority_action ? "\n>> PRIORITE: " + agentResponse.priority_action : ""), 8]);
+  }
+
+  // Log du run
+  var duration = Date.now() - startTime;
+  await sql("INSERT INTO agent_runs (observations_count,actions_taken,duration_ms) VALUES ($1,$2,$3)", [obsCount, agentResponse.priority_action || "aucune", duration]);
+
+  return json({
+    ok: true,
+    observations: obsCount,
+    summary: agentResponse.summary || "",
+    priority_action: agentResponse.priority_action || null,
+    duration_ms: duration
+  });
 }
 
 function genSecret() { var c = "abcdefghijklmnopqrstuvwxyz0123456789"; var s = ""; for (var i = 0; i < 16; i++) s += c.charAt(Math.floor(Math.random()*c.length)); return s; }
