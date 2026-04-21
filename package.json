@@ -1,8 +1,5 @@
 {
   "name": "pointeuse-iziship",
   "version": "1.0.0",
-  "private": true,
-  "dependencies": {
-    "@neondatabase/serverless": "0.9.5"
-  }
+  "private": true
 }
