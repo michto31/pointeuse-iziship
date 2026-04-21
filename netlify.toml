@@ -3,8 +3,9 @@
   functions = "netlify/functions"
 
 [functions]
-  node_bundler = "none"
+  node_bundler = "esbuild"
   external_node_modules = ["@neondatabase/serverless"]
+  included_files = ["node_modules/@neondatabase/**"]
 
 [[redirects]]
   from = "/api/*"
