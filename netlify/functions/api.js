@@ -55,6 +55,7 @@ exports.handler = async function (event) {
     if (method === "POST" && path === "init") { await initDB(); return json({ ok: true, message: "DB initialized" }); }
     if (method === "POST" && path === "auth/login") return await handleLogin(body);
     if (method === "POST" && path === "auth/change-password") return await handleChangePwd(body);
+    if (method === "POST" && path === "assistant") return await handleAssistant(body);
     if (method === "GET" && path === "workers") return json(await sql("SELECT * FROM workers ORDER BY type, name"));
     if (method === "POST" && path === "workers") {
       if (!body.name) return err("Nom requis");
@@ -145,6 +146,88 @@ async function handleScan(body) {
   var lb = breaks.length ? breaks[breaks.length-1] : null;
   if (lb && !lb.end) { lb.end = timeNow; var up = await sql1("UPDATE records SET breaks=$1::jsonb,updated_at=NOW() WHERE id=$2 RETURNING *", [JSON.stringify(breaks), rec.id]); return json({ action: "break_end", time: timeNow, worker: worker, record: up }); }
   return json({ action: "choose", time: timeNow, worker: worker, record: rec, options: ["break_start","departure"] });
+}
+
+// ═══ ASSISTANT RH (Claude AI) ═══
+async function handleAssistant(body) {
+  var apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return err("ANTHROPIC_API_KEY non configuree", 500);
+
+  var message = body.message;
+  if (!message) return err("Message requis");
+
+  var today = new Date().toISOString().slice(0, 10);
+  var monthStart = today.substring(0, 8) + "01";
+
+  var workers = await sql("SELECT id,name,agency,type,sched_in,sched_out FROM workers ORDER BY type,name");
+  var todayRecs = await sql("SELECT r.*,w.name as wname,w.type as wtype FROM records r JOIN workers w ON r.worker_id=w.id WHERE r.date=$1 ORDER BY w.type,r.arrival", [today]);
+  var monthRecs = await sql("SELECT r.worker_id,r.worker_name,r.date,r.arrival,r.departure,r.breaks,w.type as wtype,w.sched_in,w.sched_out FROM records r JOIN workers w ON r.worker_id=w.id WHERE r.date>=$1 AND r.date<=$2 ORDER BY r.date", [monthStart, today]);
+
+  var context = "DONNEES POINTEUSE IZISHIP au " + today + ":\n\n";
+  context += "SALARIES (" + workers.length + "):\n";
+  workers.forEach(function(w) { context += "- " + w.name + " | " + w.type + " | " + (w.agency||"") + " | horaires " + w.sched_in + "-" + w.sched_out + "\n"; });
+
+  context += "\nPOINTAGES AUJOURD'HUI (" + todayRecs.length + "):\n";
+  todayRecs.forEach(function(r) {
+    var brk = 0;
+    if (r.breaks && Array.isArray(r.breaks)) { r.breaks.forEach(function(b) { if (b.start && b.end) { var s = parseInt(b.start.split(":")[0])*60+parseInt(b.start.split(":")[1]); var e = parseInt(b.end.split(":")[0])*60+parseInt(b.end.split(":")[1]); brk += e-s; } }); }
+    context += "- " + r.wname + " (" + r.wtype + "): arr=" + (r.arrival||"?") + " dep=" + (r.departure||"en cours") + " pause=" + brk + "min\n";
+  });
+
+  context += "\nPOINTAGES DU MOIS (" + monthRecs.length + " enregistrements):\n";
+  var statsPerWorker = {};
+  monthRecs.forEach(function(r) {
+    if (!r.departure) return;
+    var key = r.worker_name || r.worker_id;
+    if (!statsPerWorker[key]) statsPerWorker[key] = { type: r.wtype, days: 0, totalMin: 0, lateCount: 0, overtimeMin: 0 };
+    var arr = parseInt(r.arrival.split(":")[0])*60+parseInt(r.arrival.split(":")[1]);
+    var dep = parseInt(r.departure.split(":")[0])*60+parseInt(r.departure.split(":")[1]);
+    var brk = 0;
+    if (r.breaks && Array.isArray(r.breaks)) { r.breaks.forEach(function(b) { if (b.start && b.end) { var s = parseInt(b.start.split(":")[0])*60+parseInt(b.start.split(":")[1]); var e = parseInt(b.end.split(":")[0])*60+parseInt(b.end.split(":")[1]); brk += e-s; } }); }
+    var worked = dep - arr - brk;
+    var schedIn = parseInt((r.sched_in||"08:00").split(":")[0])*60+parseInt((r.sched_in||"08:00").split(":")[1]);
+    var schedOut = parseInt((r.sched_out||"16:00").split(":")[0])*60+parseInt((r.sched_out||"16:00").split(":")[1]);
+    var expected = schedOut - schedIn;
+    statsPerWorker[key].days++;
+    statsPerWorker[key].totalMin += worked;
+    if (arr > schedIn + 5) statsPerWorker[key].lateCount++;
+    if (worked > expected) statsPerWorker[key].overtimeMin += worked - expected;
+  });
+
+  Object.keys(statsPerWorker).forEach(function(name) {
+    var s = statsPerWorker[name];
+    var h = Math.floor(s.totalMin/60); var m = s.totalMin%60;
+    var oh = Math.floor(s.overtimeMin/60); var om = s.overtimeMin%60;
+    context += "- " + name + " (" + s.type + "): " + s.days + "j, " + h + "h" + String(m).padStart(2,"0") + " total, " + oh + "h" + String(om).padStart(2,"0") + " heures sup, " + s.lateCount + " retards\n";
+  });
+
+  var messages = [];
+  if (body.history && Array.isArray(body.history)) {
+    body.history.forEach(function(h) { messages.push({ role: h.role, content: h.content }); });
+  }
+  messages.push({ role: "user", content: message });
+
+  var claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 1000,
+      system: "Tu es l'assistant RH de l'entreprise IziShip (logistique). Tu analyses les donnees de pointage et reponds aux questions du directeur en francais. Sois concis, precis et utilise des chiffres. Voici les donnees actuelles:\n\n" + context,
+      messages: messages
+    })
+  });
+
+  if (!claudeRes.ok) {
+    var errText = await claudeRes.text();
+    console.error("Claude API error:", errText);
+    return err("Erreur Claude API: " + claudeRes.status, 500);
+  }
+
+  var claudeData = await claudeRes.json();
+  var reply = "";
+  if (claudeData.content && claudeData.content.length > 0) { reply = claudeData.content[0].text || ""; }
+  return json({ reply: reply });
 }
 
 function genSecret() { var c = "abcdefghijklmnopqrstuvwxyz0123456789"; var s = ""; for (var i = 0; i < 16; i++) s += c.charAt(Math.floor(Math.random()*c.length)); return s; }
