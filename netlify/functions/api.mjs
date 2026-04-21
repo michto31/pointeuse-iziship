@@ -11,14 +11,20 @@ function err(m, s) { return json({ error: m }, s || 400); }
 
 function getSQL() {
   var url = process.env.DATABASE_URL || process.env.NETLIFY_DATABASE_URL_UNPOOLED || process.env.NETLIFY_DATABASE_URL || "";
+  console.log("DB_URL LENGTH:", url.length, "STARTS:", url.substring(0, 60), "ENDS:", url.substring(url.length - 30));
   if (!url) return null;
-  return neon(url);
+  try {
+    return neon(url);
+  } catch (e) {
+    console.log("NEON ERROR:", e.message);
+    return null;
+  }
 }
 
 export default async function handler(event) {
   if (event.httpMethod === "OPTIONS") return new Response(null, { status: 204, headers: H });
   var sql = getSQL();
-  if (!sql) return json({ error: "No DATABASE_URL" }, 500);
+  if (!sql) return json({ error: "No DATABASE_URL or neon() failed. Check function logs." }, 500);
 
   var path = event.path.replace("/.netlify/functions/api", "").replace(/^\/+/, "");
   var method = event.httpMethod;
