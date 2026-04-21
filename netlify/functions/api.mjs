@@ -9,14 +9,10 @@ const H = {
 function json(d, s) { return new Response(JSON.stringify(d), { status: s || 200, headers: H }); }
 function err(m, s) { return json({ error: m }, s || 400); }
 
-var _sql = null;
 function getSQL() {
-  if (_sql) return _sql;
   var url = process.env.DATABASE_URL || process.env.NETLIFY_DATABASE_URL_UNPOOLED || process.env.NETLIFY_DATABASE_URL || "";
   if (!url) return null;
-  url = url.replace(/[&?]channel_binding=[^&]*/g, "").replace(/\?$/, "");
-  _sql = neon(url);
-  return _sql;
+  return neon(url);
 }
 
 export default async function handler(event) {
