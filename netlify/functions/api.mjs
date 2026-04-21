@@ -1,6 +1,5 @@
 // netlify/functions/api.mjs
-// Pointeuse IziShip — API Backend
-// Zero dependency — direct Neon HTTP SQL API
+// Pointeuse IziShip — Zero dependency — direct Neon HTTP SQL API
 
 var DB_URL = "";
 function getDbUrl() {
@@ -14,7 +13,8 @@ async function sql(query, params) {
   if (!url) throw new Error("No DATABASE_URL");
   var u = new URL(url);
   var endpoint = "https://" + u.hostname + "/sql";
-  var auth = "Basic " + btoa(u.username + ":" + decodeURIComponent(u.password));
+  var creds = u.username + ":" + decodeURIComponent(u.password);
+  var auth = "Basic " + Buffer.from(creds).toString("base64");
   var res = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": auth, "Neon-Connection-String": url, "Neon-Raw-Text-Output": "true", "Neon-Array-Mode": "false" },
