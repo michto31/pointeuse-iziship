@@ -1,6 +1,4 @@
-import { createRequire } from "module";
-const require = createRequire(import.meta.url);
-const { neon } = require("@neondatabase/serverless");
+import { neon } from "@neondatabase/serverless";
 
 const H = {
   "Content-Type": "application/json",
