@@ -10,7 +10,7 @@ const H = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
 };
-function json(d, s) { return { statusCode: s || 200, headers: H, body: JSON.stringify(d) }; }
+function json(d, s) { return new Response(JSON.stringify(d), { status: s || 200, headers: H }); }
 function err(m, s) { return json({ error: m }, s || 400); }
 
 let _pool = null;
@@ -47,7 +47,7 @@ async function q(text, params) {
 async function q1(text, params) { return (await q(text, params))[0] || null; }
 
 export default async function handler(event) {
-  if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: H };
+  if (event.httpMethod === "OPTIONS") return new Response(null, { status: 204, headers: H });
 
   try {
     const pool = getPool();
