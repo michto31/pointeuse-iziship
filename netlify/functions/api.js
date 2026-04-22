@@ -1,3 +1,5 @@
+var crypto = require("crypto");
+
 var H = {
   "Content-Type": "application/json",
   "Access-Control-Allow-Origin": "*",
@@ -39,6 +41,45 @@ async function sql(query, params) {
 }
 async function sql1(q, p) { return (await sql(q, p))[0] || null; }
 
+function authError(status, message) { var e = new Error(message); e.status = status; return e; }
+
+// In-process rate limiter (Map keyed by IP). Intentionally NOT persisted to DB:
+// - Cold starts reset the window, so this is a best-effort slowdown on scraping,
+//   not a hard boundary. That's fine for the only public list endpoint we expose
+//   (worker-names, used 1-2x per legitimate session).
+// - A real attacker can bypass by rotating IPs or waiting out a cold start, but
+//   casual scrapers hit a 429 quickly which is the bar we want.
+var rateLimitMap = new Map();
+function checkRateLimit(event, maxPerMinute) {
+  var h = event.headers || {};
+  var fwd = h["x-forwarded-for"] || h["X-Forwarded-For"] || h["client-ip"] || "";
+  var ip = fwd.split(",")[0].trim() || "unknown";
+  var now = Date.now();
+  var entry = rateLimitMap.get(ip);
+  if (!entry || now - entry.windowStart > 60000) {
+    rateLimitMap.set(ip, { count: 1, windowStart: now });
+    // Opportunistic cleanup to cap memory on long-lived instances
+    if (rateLimitMap.size > 1000) {
+      for (var k of rateLimitMap.keys()) { if (now - rateLimitMap.get(k).windowStart > 60000) rateLimitMap.delete(k); }
+    }
+    return true;
+  }
+  entry.count++;
+  return entry.count <= maxPerMinute;
+}
+
+async function requireAuth(event, requiredRole) {
+  var headers = event.headers || {};
+  var authHeader = headers.authorization || headers.Authorization || "";
+  var m = /^Bearer\s+(.+)$/.exec(authHeader.trim());
+  if (!m) throw authError(401, "unauthorized");
+  var token = m[1].trim();
+  var s = await sql1("SELECT worker_id, role FROM sessions WHERE token=$1 AND expires_at>NOW()", [token]);
+  if (!s) throw authError(401, "unauthorized");
+  if (requiredRole === "admin" && s.role !== "admin") throw authError(403, "forbidden");
+  return s;
+}
+
 exports.handler = async function (event) {
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: H, body: "" };
   var dbUrl = getDbUrl();
@@ -52,26 +93,44 @@ exports.handler = async function (event) {
   var qs = event.queryStringParameters || {};
 
   try {
+    // Public: /api/init is left unauthenticated because it is idempotent
+    // (CREATE TABLE IF NOT EXISTS) and must be callable on a fresh deploy
+    // before any admin account/session exists.
     if (method === "POST" && path === "init") { await initDB(); return json({ ok: true, message: "DB initialized" }); }
     if (method === "POST" && path === "auth/login") return await handleLogin(body);
+    if (method === "POST" && path === "auth/logout") return await handleLogout(event, body);
     if (method === "POST" && path === "auth/change-password") return await handleChangePwd(body);
-    if (method === "POST" && path === "assistant") return await handleAssistant(body);
-    if (method === "POST" && path === "agent/run") return await handleAgentRun();
-    if (method === "GET" && path === "agent/observations") return json(await sql("SELECT * FROM agent_memory ORDER BY created_at DESC LIMIT 50"));
-    if (method === "POST" && path === "agent/feedback") { await sql("UPDATE agent_memory SET feedback=$1 WHERE id=$2", [body.feedback, body.id]); return json({ ok: true }); }
-    if (method === "GET" && path === "agent/runs") return json(await sql("SELECT * FROM agent_runs ORDER BY run_date DESC LIMIT 20"));
-    if (method === "GET" && path === "workers") return json(await sql("SELECT * FROM workers ORDER BY type, name"));
+    // Minimal public endpoint (id+name only) so the shared-tablet login
+    // dropdown works before any auth token exists. Do NOT broaden this.
+    // Rate-limited (20/min/IP, in-process) to slow scraping.
+    // TODO: filter to active workers only once the workers table gains an
+    // `active` / `archived` column. Currently returns all rows.
+    if (method === "GET" && path === "public/worker-names") {
+      if (!checkRateLimit(event, 20)) return json({ error: "Too many requests" }, 429);
+      return json(await sql("SELECT id, name FROM workers ORDER BY name"));
+    }
+
+    if (method === "POST" && path === "assistant") { await requireAuth(event, "admin"); return await handleAssistant(body); }
+    if (method === "POST" && path === "agent/run") { await requireAuth(event, "admin"); return await handleAgentRun(); }
+    if (method === "GET" && path === "agent/observations") { await requireAuth(event, "admin"); return json(await sql("SELECT * FROM agent_memory ORDER BY created_at DESC LIMIT 50")); }
+    if (method === "POST" && path === "agent/feedback") { await requireAuth(event, "admin"); await sql("UPDATE agent_memory SET feedback=$1 WHERE id=$2", [body.feedback, body.id]); return json({ ok: true }); }
+    if (method === "GET" && path === "agent/runs") { await requireAuth(event, "admin"); return json(await sql("SELECT * FROM agent_runs ORDER BY run_date DESC LIMIT 20")); }
+
+    if (method === "GET" && path === "workers") { await requireAuth(event, "admin"); return json(await sql("SELECT * FROM workers ORDER BY type, name")); }
     if (method === "POST" && path === "workers") {
+      await requireAuth(event, "admin");
       if (!body.name) return err("Nom requis");
       return json(await sql1("INSERT INTO workers (name,agency,type,phone,badge,sched_in,sched_out) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *", [body.name, body.agency||"", body.type||"interim", body.phone||"", body.badge||"", body.schedIn||"08:00", body.schedOut||"16:00"]), 201);
     }
     if (method === "PUT" && seg[0] === "workers" && seg[1]) {
+      await requireAuth(event, "admin");
       var r = await sql1("UPDATE workers SET name=COALESCE($1,name),agency=COALESCE($2,agency),type=COALESCE($3,type),phone=COALESCE($4,phone),badge=COALESCE($5,badge),sched_in=COALESCE($6,sched_in),sched_out=COALESCE($7,sched_out),updated_at=NOW() WHERE id=$8 RETURNING *", [body.name, body.agency, body.type, body.phone, body.badge, body.schedIn, body.schedOut, parseInt(seg[1])]);
       return r ? json(r) : err("Introuvable", 404);
     }
-    if (method === "DELETE" && seg[0] === "workers" && seg[1]) { await sql("DELETE FROM workers WHERE id=$1", [parseInt(seg[1])]); return json({ ok: true }); }
+    if (method === "DELETE" && seg[0] === "workers" && seg[1]) { await requireAuth(event, "admin"); await sql("DELETE FROM workers WHERE id=$1", [parseInt(seg[1])]); return json({ ok: true }); }
 
     if (method === "GET" && path === "records") {
+      await requireAuth(event, "admin");
       var date=qs.date, wid=qs.workerId, from=qs.from, to=qs.to;
       if (date && wid) return json(await sql("SELECT r.*,w.type as worker_type FROM records r JOIN workers w ON r.worker_id=w.id WHERE r.date=$1 AND r.worker_id=$2 ORDER BY r.arrival", [date, parseInt(wid)]));
       if (date) return json(await sql("SELECT r.*,w.type as worker_type FROM records r JOIN workers w ON r.worker_id=w.id WHERE r.date=$1 ORDER BY w.type,r.arrival", [date]));
@@ -80,29 +139,32 @@ exports.handler = async function (event) {
       return json(await sql("SELECT r.*,w.type as worker_type FROM records r JOIN workers w ON r.worker_id=w.id WHERE r.date=$1 ORDER BY w.type,r.arrival", [new Date().toISOString().slice(0,10)]));
     }
     if (method === "POST" && path === "records") {
+      await requireAuth(event, "admin");
       if (!body.workerId || !body.arrival) return err("workerId et arrival requis");
       return json(await sql1("INSERT INTO records (worker_id,worker_name,agency,date,arrival,departure,breaks) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb) RETURNING *", [body.workerId, body.workerName||"", body.agency||"", body.date, body.arrival, body.departure||null, JSON.stringify(body.breaks||[])]), 201);
     }
     if (method === "PUT" && seg[0] === "records" && seg[1]) {
+      await requireAuth(event, "admin");
       var dep = body.departure !== undefined ? body.departure : null;
       var brk = body.breaks ? JSON.stringify(body.breaks) : null;
       return json(await sql1("UPDATE records SET arrival=COALESCE($1,arrival),departure=$2,breaks=COALESCE($3::jsonb,breaks),updated_at=NOW() WHERE id=$4 RETURNING *", [body.arrival, dep, brk, parseInt(seg[1])]), 200);
     }
-    if (method === "DELETE" && seg[0] === "records" && seg[1]) { await sql("DELETE FROM records WHERE id=$1", [parseInt(seg[1])]); return json({ ok: true }); }
+    if (method === "DELETE" && seg[0] === "records" && seg[1]) { await requireAuth(event, "admin"); await sql("DELETE FROM records WHERE id=$1", [parseInt(seg[1])]); return json({ ok: true }); }
 
-    if (method === "GET" && path === "postes") return json(await sql("SELECT * FROM postes ORDER BY name"));
-    if (method === "POST" && path === "postes") { if (!body.name) return err("Nom requis"); return json(await sql1("INSERT INTO postes (name,location) VALUES ($1,$2) RETURNING *", [body.name, body.location||""]), 201); }
-    if (method === "DELETE" && seg[0] === "postes" && seg[1]) { await sql("DELETE FROM postes WHERE id=$1", [parseInt(seg[1])]); return json({ ok: true }); }
+    if (method === "GET" && path === "postes") { await requireAuth(event, "admin"); return json(await sql("SELECT * FROM postes ORDER BY name")); }
+    if (method === "POST" && path === "postes") { await requireAuth(event, "admin"); if (!body.name) return err("Nom requis"); return json(await sql1("INSERT INTO postes (name,location) VALUES ($1,$2) RETURNING *", [body.name, body.location||""]), 201); }
+    if (method === "DELETE" && seg[0] === "postes" && seg[1]) { await requireAuth(event, "admin"); await sql("DELETE FROM postes WHERE id=$1", [parseInt(seg[1])]); return json({ ok: true }); }
 
     if (method === "GET" && path === "qr-secret") {
       var row = await sql1("SELECT value FROM settings WHERE key='qr_secret'");
       if (!row) { var s = genSecret(); await sql("INSERT INTO settings (key,value) VALUES ('qr_secret',$1)", [s]); return json({ secret: s }); }
       return json({ secret: row.value });
     }
-    if (method === "POST" && path === "qr-secret/regenerate") { var s = genSecret(); await sql("INSERT INTO settings (key,value) VALUES ('qr_secret',$1) ON CONFLICT (key) DO UPDATE SET value=$1", [s]); return json({ secret: s }); }
+    if (method === "POST" && path === "qr-secret/regenerate") { await requireAuth(event, "admin"); var s = genSecret(); await sql("INSERT INTO settings (key,value) VALUES ('qr_secret',$1) ON CONFLICT (key) DO UPDATE SET value=$1", [s]); return json({ secret: s }); }
     if (method === "POST" && path === "scan") return await handleScan(body);
     return err("Route: " + path, 404);
   } catch (e) {
+    if (e && e.status) return json({ error: e.message }, e.status);
     console.error("API Error:", e);
     return json({ error: e.message || "Unknown error" }, 500);
   }
@@ -115,19 +177,62 @@ async function initDB() {
   await sql("CREATE TABLE IF NOT EXISTS settings (key VARCHAR(100) PRIMARY KEY,value TEXT NOT NULL)");
   await sql("CREATE TABLE IF NOT EXISTS agent_memory (id SERIAL PRIMARY KEY,type VARCHAR(50) NOT NULL,content TEXT NOT NULL,importance INTEGER DEFAULT 5,feedback VARCHAR(20) DEFAULT 'pending',created_at TIMESTAMP DEFAULT NOW())");
   await sql("CREATE TABLE IF NOT EXISTS agent_runs (id SERIAL PRIMARY KEY,run_date TIMESTAMP DEFAULT NOW(),observations_count INTEGER DEFAULT 0,actions_taken TEXT DEFAULT '',duration_ms INTEGER DEFAULT 0)");
+  await sql("CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY,worker_id INT NULL REFERENCES workers(id) ON DELETE CASCADE,role TEXT NOT NULL CHECK (role IN ('admin','worker')),created_at TIMESTAMPTZ DEFAULT NOW(),expires_at TIMESTAMPTZ NOT NULL)");
   if (!(await sql1("SELECT value FROM settings WHERE key='admin_password'"))) await sql("INSERT INTO settings (key,value) VALUES ('admin_password','admin')");
   if (!(await sql1("SELECT value FROM settings WHERE key='qr_secret'"))) await sql("INSERT INTO settings (key,value) VALUES ('qr_secret',$1)", [genSecret()]);
   await sql("CREATE INDEX IF NOT EXISTS idx_records_date ON records(date)");
   await sql("CREATE INDEX IF NOT EXISTS idx_records_worker ON records(worker_id)");
   await sql("CREATE INDEX IF NOT EXISTS idx_workers_badge ON workers(badge)");
   await sql("CREATE INDEX IF NOT EXISTS idx_agent_memory_type ON agent_memory(type)");
+  await sql("CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)");
+}
+
+async function issueSession(role, workerId, hours) {
+  var token = crypto.randomUUID();
+  var row = await sql1(
+    "INSERT INTO sessions (token, worker_id, role, expires_at) VALUES ($1, $2, $3, NOW() + ($4 || ' hours')::interval) RETURNING token, role, worker_id, expires_at",
+    [token, workerId, role, String(hours)]
+  );
+  return row;
 }
 
 async function handleLogin(body) {
-  if (body.mode === "admin") { var r = await sql1("SELECT value FROM settings WHERE key='admin_password'"); return (!r || r.value !== body.password) ? err("Mot de passe incorrect", 401) : json({ role: "admin" }); }
-  if (body.mode === "badge") { if (!body.badge) return err("Badge requis"); var w = await sql1("SELECT * FROM workers WHERE badge=$1 AND badge!=''", [body.badge]); return w ? json({ role: "employee", worker: w }) : err("Badge inconnu", 401); }
-  if (body.mode === "name") { if (!body.workerId) return err("workerId requis"); var w = await sql1("SELECT * FROM workers WHERE id=$1", [parseInt(body.workerId)]); return w ? json({ role: "employee", worker: w }) : err("Introuvable", 401); }
+  if (body.mode === "admin") {
+    var r = await sql1("SELECT value FROM settings WHERE key='admin_password'");
+    if (!r || r.value !== body.password) return err("Mot de passe incorrect", 401);
+    var s = await issueSession("admin", null, 12);
+    return json({ role: "admin", worker_id: null, token: s.token, expires_at: s.expires_at });
+  }
+  if (body.mode === "badge") {
+    if (!body.badge) return err("Badge requis");
+    var w = await sql1("SELECT * FROM workers WHERE badge=$1 AND badge!=''", [body.badge]);
+    if (!w) return err("Badge inconnu", 401);
+    var s = await issueSession("worker", w.id, 14);
+    return json({ role: "worker", worker_id: w.id, token: s.token, expires_at: s.expires_at, worker: w });
+  }
+  if (body.mode === "name") {
+    if (!body.workerId) return err("workerId requis");
+    var w = await sql1("SELECT * FROM workers WHERE id=$1", [parseInt(body.workerId)]);
+    if (!w) return err("Introuvable", 401);
+    var s = await issueSession("worker", w.id, 14);
+    return json({ role: "worker", worker_id: w.id, token: s.token, expires_at: s.expires_at, worker: w });
+  }
   return err("Mode invalide");
+}
+
+async function handleLogout(event, body) {
+  var token = null;
+  if (body && body.token) token = body.token;
+  if (!token) {
+    var headers = event.headers || {};
+    var authHeader = headers.authorization || headers.Authorization || "";
+    var m = /^Bearer\s+(.+)$/.exec(authHeader.trim());
+    if (m) token = m[1].trim();
+  }
+  if (token) await sql("DELETE FROM sessions WHERE token=$1", [token]);
+  // Opportunistic GC of expired sessions (cheap, keeps table small)
+  await sql("DELETE FROM sessions WHERE expires_at<NOW()");
+  return json({ ok: true });
 }
 
 async function handleChangePwd(body) {

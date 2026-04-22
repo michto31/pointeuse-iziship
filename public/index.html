@@ -206,7 +206,7 @@ tr:hover td{background:#FAFBFD}
 <p>Connectez-vous pour acc&#233;der &#224; l&#39;application</p>
 <div class="login-tabs">
 <button class="login-tab active" onclick="setLoginMode('admin',this)">Administrateur</button>
-<button class="login-tab" onclick="setLoginMode('employee',this)">Salari&#233;</button>
+<button class="login-tab" onclick="setLoginMode('worker',this)">Salari&#233;</button>
 </div>
 <div id="loginAdminForm">
 <div class="form-group"><label class="form-label" style="text-align:left;">Mot de passe admin</label><input type="password" class="form-control" id="loginAdminPwd" placeholder="Mot de passe"></div>
@@ -491,22 +491,38 @@ Bonjour ! Je suis votre assistant RH. Je peux analyser vos donn&#233;es de point
 <script>
 // ═══ AUTH SYSTEM ═══
 var SESSION_KEY='pointeuse_session';
+var TOKEN_KEY='pointeuse_token';
+var EXPIRES_KEY='pointeuse_expires';
 
 function getSession(){try{return JSON.parse(sessionStorage.getItem(SESSION_KEY));}catch(e){return null;}}
 function setSession(s){sessionStorage.setItem(SESSION_KEY,JSON.stringify(s));}
 function clearSession(){sessionStorage.removeItem(SESSION_KEY);}
+function getToken(){return localStorage.getItem(TOKEN_KEY);}
+function setToken(t,exp){localStorage.setItem(TOKEN_KEY,t);if(exp)localStorage.setItem(EXPIRES_KEY,exp);}
+function clearToken(){localStorage.removeItem(TOKEN_KEY);localStorage.removeItem(EXPIRES_KEY);}
+function tokenIsExpiringSoon(){
+  var exp=localStorage.getItem(EXPIRES_KEY);
+  if(!exp)return false;
+  var expMs=new Date(exp).getTime();
+  if(isNaN(expMs))return false;
+  return (expMs-Date.now())<60000;
+}
 
 function setLoginMode(mode,btn){
   document.querySelectorAll('.login-tab').forEach(function(b){b.classList.remove('active');});
   btn.classList.add('active');
   document.getElementById('loginAdminForm').style.display=mode==='admin'?'':'none';
-  document.getElementById('loginEmpForm').style.display=mode==='employee'?'':'none';
-  if(mode==='employee') populateLoginSelect();
+  document.getElementById('loginEmpForm').style.display=mode==='worker'?'':'none';
+  if(mode==='worker') populateLoginSelect();
 }
 
-function populateLoginSelect(){
+async function populateLoginSelect(){
   var sel=document.getElementById('loginEmpSelect');
   var workers=lW();
+  if(!workers || workers.length===0){
+    try{workers=await apiFetch('public/worker-names');}catch(e){console.error('populateLoginSelect:',e);workers=[];}
+  }
+  if(!Array.isArray(workers))workers=[];
   sel.innerHTML='<option value="">\u2014 Choisir votre nom \u2014</option>';
   workers.forEach(function(w){
     sel.innerHTML+='<option value="'+w.id+'">'+w.name+(w.agency?' ('+w.agency+')':'')+'</option>';
@@ -517,7 +533,12 @@ async function loginAdmin(){
   var pwd=document.getElementById('loginAdminPwd').value;
   try{
     var res=await apiPost('auth/login',{mode:'admin',password:pwd});
-    if(res.role==='admin'){setSession({role:'admin'});showAdminView();}
+    if(res.role==='admin'){
+      setToken(res.token,res.expires_at);
+      setSession({role:'admin'});
+      await syncAfterLogin();
+      showAdminView();
+    }
   }catch(e){toast('Mot de passe incorrect','error');}
 }
 async function loginEmployee(){
@@ -525,7 +546,11 @@ async function loginEmployee(){
   if(!badge){toast('Entrez votre code badge','error');return;}
   try{
     var res=await apiPost('auth/login',{mode:'badge',badge:badge});
-    if(res.worker){setSession({role:'employee',workerId:res.worker.id,workerName:res.worker.name});showEmployeeView(res.worker);}
+    if(res.worker){
+      setToken(res.token,res.expires_at);
+      setSession({role:'worker',workerId:res.worker.id,workerName:res.worker.name});
+      showEmployeeView(res.worker);
+    }
   }catch(e){toast('Badge inconnu','error');}
 }
 async function loginEmployeeByName(){
@@ -535,12 +560,18 @@ async function loginEmployeeByName(){
     var res=await apiPost('auth/login',{mode:'name',workerId:parseInt(id)});
     if(res.worker){
       var w={id:res.worker.id,name:res.worker.name,agency:res.worker.agency,schedIn:res.worker.sched_in,schedOut:res.worker.sched_out};
-      setSession({role:'employee',workerId:w.id,workerName:w.name});
+      setToken(res.token,res.expires_at);
+      setSession({role:'worker',workerId:w.id,workerName:w.name});
       showEmployeeView(w);
     }
   }catch(e){toast('Salari\u00e9 introuvable','error');}
 }
-function logout(){
+async function logout(){
+  var token=getToken();
+  if(token){
+    try{await fetch(API_BASE+'/auth/logout',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({token:token})});}catch(e){}
+  }
+  clearToken();
   clearSession();
   stopEmpCamera();
   document.getElementById('loginScreen').style.display='flex';
@@ -548,6 +579,10 @@ function logout(){
   document.getElementById('empScreen').style.display='none';
   document.getElementById('loginAdminPwd').value='';
   document.getElementById('loginEmpBadge').value='';
+}
+
+async function syncAfterLogin(){
+  try{await Promise.all([syncWorkers(),syncRecords(tS()),syncPostes(),syncQRSecret()]);}catch(e){console.error('syncAfterLogin:',e);}
 }
 
 function showAdminView(){
@@ -585,7 +620,7 @@ var empCamStream=null;
 var empQRInterval=null;
 
 function updateEmpView(){
-  var sess=getSession();if(!sess||sess.role!=='employee')return;
+  var sess=getSession();if(!sess||sess.role!=='worker')return;
   var w=lW().find(function(x){return x.id===sess.workerId;});
   if(!w){toast('Salari\u00e9 introuvable','error');logout();return;}
 
@@ -771,7 +806,7 @@ function showEmpResult(msg,bg,color){
 // Update employee clock every second
 setInterval(function(){
   var sess=getSession();
-  if(sess&&sess.role==='employee')updateEmpView();
+  if(sess&&sess.role==='worker')updateEmpView();
 },1000);
 
 // Auth init handled in startup() below
@@ -790,7 +825,24 @@ function lR(){return _recordsCache;}
 async function apiFetch(path,opts){
   opts=opts||{};
   var url=API_BASE+'/'+path;
-  var res=await fetch(url,Object.assign({headers:{'Content-Type':'application/json'}},opts));
+  var headers=Object.assign({'Content-Type':'application/json'},opts.headers||{});
+  var token=getToken();
+  if(token)headers['Authorization']='Bearer '+token;
+  var res=await fetch(url,Object.assign({},opts,{headers:headers}));
+  if(res.status===401){
+    var hadToken=!!token;
+    // Clear BEFORE throw so callers can't read a stale response
+    clearToken();
+    clearSession();
+    if(hadToken){
+      stopEmpCamera();
+      var login=document.getElementById('loginScreen');if(login)login.style.display='flex';
+      var admin=document.getElementById('adminScreen');if(admin)admin.style.display='none';
+      var emp=document.getElementById('empScreen');if(emp)emp.style.display='none';
+      try{toast('Session expirée, reconnectez-vous','error');}catch(e){}
+    }
+    throw new Error('unauthorized');
+  }
   if(!res.ok){var e=await res.json().catch(function(){return{error:'Erreur serveur'};});throw new Error(e.error||'Erreur '+res.status);}
   return res.json();
 }
@@ -877,7 +929,9 @@ function gI(){return Date.now().toString(36)+Math.random().toString(36).slice(2,
 // Init: load all data from API on startup
 async function initData(){
   try{await apiPost('init',{});}catch(e){console.log('DB already initialized or error:',e);}
-  await Promise.all([syncWorkers(),syncRecords(tS()),syncPostes(),syncQRSecret()]);
+  if(getToken()){
+    await Promise.all([syncWorkers(),syncRecords(tS()),syncPostes(),syncQRSecret()]);
+  }
 }
 
 function updateClock(){
@@ -1646,15 +1700,20 @@ document.querySelectorAll('.nav-item[data-page]').forEach(function(b){
 
 // ═══ STARTUP ═══
 (async function startup(){
+  // If the cached token is expired (or within 60s), force re-login before any API call
+  if(getToken() && tokenIsExpiringSoon()){
+    clearToken();
+    clearSession();
+  }
   await initData();
   refreshSel();renderLiveList();
   // Check existing session
   var sess=getSession();
-  if(sess){
+  if(sess && getToken()){
     if(sess.role==='admin'){showAdminView();}
-    else if(sess.role==='employee'){
+    else if(sess.role==='worker'){
       var w=lW().find(function(x){return x.id===sess.workerId;});
-      if(w){showEmployeeView(w);}else{clearSession();}
+      if(w){showEmployeeView(w);}else{clearSession();clearToken();}
     }
   }
 })();
@@ -1788,25 +1847,15 @@ async function sendChat() {
   document.getElementById('chatSendBtn').disabled = true;
 
   try {
-    var res = await fetch('/api/assistant', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: msg, history: chatHistory.slice(-6) })
-    });
-    var data = await res.json();
+    var data = await apiPost('assistant', { message: msg, history: chatHistory.slice(-6) });
     container.removeChild(typing);
-
-    if (data.error) {
-      container.innerHTML += '<div class="chat-msg-ai" style="color:var(--red);">Erreur : ' + data.error + '</div>';
-    } else {
-      var reply = (data.reply || '').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-      container.innerHTML += '<div class="chat-msg-ai">' + reply + '</div>';
-      chatHistory.push({ role: 'user', content: msg });
-      chatHistory.push({ role: 'assistant', content: data.reply || '' });
-    }
+    var reply = (data.reply || '').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    container.innerHTML += '<div class="chat-msg-ai">' + reply + '</div>';
+    chatHistory.push({ role: 'user', content: msg });
+    chatHistory.push({ role: 'assistant', content: data.reply || '' });
   } catch (e) {
-    container.removeChild(typing);
-    container.innerHTML += '<div class="chat-msg-ai" style="color:var(--red);">Erreur de connexion : ' + e.message + '</div>';
+    if(container.contains(typing))container.removeChild(typing);
+    container.innerHTML += '<div class="chat-msg-ai" style="color:var(--red);">Erreur : ' + e.message + '</div>';
   }
 
   document.getElementById('chatSendBtn').disabled = false;
@@ -1825,18 +1874,11 @@ async function runAgent() {
   status.innerHTML = '<div class="chat-typing-dot" style="display:inline-block;"></div> L&#39;agent analyse vos donn&#233;es...';
 
   try {
-    var res = await fetch('/api/agent/run', { method: 'POST' });
-    var data = await res.json();
-    if (data.error) {
-      status.style.background = '#fef2f2';
-      status.style.color = 'var(--red)';
-      status.textContent = 'Erreur: ' + data.error;
-    } else {
-      status.style.background = '#f0fdf4';
-      status.style.color = '#16a34a';
-      status.innerHTML = '<strong>Analyse termin&#233;e</strong> (' + (data.duration_ms/1000).toFixed(1) + 's) — ' + data.observations + ' observations<br>' + (data.summary || '') + (data.priority_action ? '<br><strong>Action prioritaire:</strong> ' + data.priority_action : '');
-      loadAgentData();
-    }
+    var data = await apiPost('agent/run', {});
+    status.style.background = '#f0fdf4';
+    status.style.color = '#16a34a';
+    status.innerHTML = '<strong>Analyse termin&#233;e</strong> (' + (data.duration_ms/1000).toFixed(1) + 's) — ' + data.observations + ' observations<br>' + (data.summary || '') + (data.priority_action ? '<br><strong>Action prioritaire:</strong> ' + data.priority_action : '');
+    loadAgentData();
   } catch (e) {
     status.style.background = '#fef2f2';
     status.style.color = 'var(--red)';
@@ -1849,8 +1891,8 @@ async function runAgent() {
 async function loadAgentData() {
   try {
     var [obsRes, runsRes] = await Promise.all([
-      fetch('/api/agent/observations').then(function(r) { return r.json(); }),
-      fetch('/api/agent/runs').then(function(r) { return r.json(); })
+      apiGet('agent/observations'),
+      apiGet('agent/runs')
     ]);
 
     // Observations
@@ -1920,7 +1962,7 @@ async function loadAgentData() {
 
 async function agentFeedback(id, feedback, btn) {
   try {
-    await fetch('/api/agent/feedback', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({id: id, feedback: feedback}) });
+    await apiPost('agent/feedback', {id: id, feedback: feedback});
     loadAgentData();
   } catch (e) { alert('Erreur: ' + e.message); }
 }
