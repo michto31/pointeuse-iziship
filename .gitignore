@@ -1,0 +1,11 @@
+.env
+.env.local
+*.env
+
+.DS_Store
+node_modules/
+.netlify/
+
+# Tooling local, pas à committer
+.claude/
+deno.lock
