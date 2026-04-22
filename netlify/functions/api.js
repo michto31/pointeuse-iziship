@@ -43,6 +43,28 @@ async function sql1(q, p) { return (await sql(q, p))[0] || null; }
 
 function authError(status, message) { var e = new Error(message); e.status = status; return e; }
 
+// ─── Phase 5 — state machine du pointage worker ─────────────────────────
+// Transitions valides pour workers.last_clock_state. Pas de CHECK en DB (souplesse
+// pour ajouter de nouveaux états), donc TOUTE écriture de last_clock_state passe
+// par setClockState() qui valide la valeur. Interdiction de UPDATE direct dans
+// les autres routes — discipline de code.
+var CLOCK_STATES = { idle: true, at_work: true, on_break: true };
+async function setClockState(workerId, newState) {
+  if (!CLOCK_STATES[newState]) throw new Error("Invalid clock state: " + newState);
+  await sql("UPDATE workers SET last_clock_state=$1 WHERE id=$2", [newState, parseInt(workerId)]);
+}
+
+// Types d'événements security_events. Non contraint en DB (TEXT libre) mais toute
+// insertion doit passer par logSecurityEvent() qui vérifie le type.
+var SECURITY_EVENT_TYPES = { pin_fail: true, pin_lock: true, pin_create: true, pin_reset: true, station_regen: true };
+async function logSecurityEvent(eventType, workerId, stationId, details) {
+  if (!SECURITY_EVENT_TYPES[eventType]) throw new Error("Invalid security event type: " + eventType);
+  await sql(
+    "INSERT INTO security_events (event_type, worker_id, station_id, details) VALUES ($1, $2, $3, $4::jsonb)",
+    [eventType, workerId || null, stationId || null, JSON.stringify(details || {})]
+  );
+}
+
 // In-process rate limiter (Map keyed by IP). Intentionally NOT persisted to DB:
 // - Cold starts reset the window, so this is a best-effort slowdown on scraping,
 //   not a hard boundary. That's fine for the only public list endpoint we expose
@@ -192,6 +214,39 @@ async function initDB() {
   await sql("CREATE INDEX IF NOT EXISTS idx_workers_badge ON workers(badge)");
   await sql("CREATE INDEX IF NOT EXISTS idx_agent_memory_type ON agent_memory(type)");
   await sql("CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)");
+
+  // ═══ Phase 5 — pointage sécurisé : PIN + stations + audit ═══
+
+  // 1) Workers : PIN (hash bcrypt) + state machine pour cohérence actions
+  await sql("ALTER TABLE workers ADD COLUMN IF NOT EXISTS pin_hash TEXT");
+  await sql("ALTER TABLE workers ADD COLUMN IF NOT EXISTS pin_attempts INT DEFAULT 0");
+  await sql("ALTER TABLE workers ADD COLUMN IF NOT EXISTS pin_locked BOOLEAN DEFAULT FALSE");
+  await sql("ALTER TABLE workers ADD COLUMN IF NOT EXISTS last_clock_state TEXT DEFAULT 'idle'");
+
+  // 2) Postes : extension pour Phase 5 (code_short, secret_token, active).
+  // Nullable au départ : les postes existants auront NULL tant qu'un admin
+  // ne clique pas "Activer / générer QR". Les postes avec NULL ne peuvent
+  // pas servir au pointage (endpoint /stations/verify les rejette).
+  await sql("ALTER TABLE postes ADD COLUMN IF NOT EXISTS code_short TEXT");
+  await sql("ALTER TABLE postes ADD COLUMN IF NOT EXISTS secret_token TEXT");
+  await sql("ALTER TABLE postes ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT TRUE");
+  // UNIQUE partiel : contraint seulement les valeurs non-NULL pour que les
+  // postes legacy (NULL) ne rentrent pas en conflit.
+  await sql("CREATE UNIQUE INDEX IF NOT EXISTS idx_postes_code_short ON postes(code_short) WHERE code_short IS NOT NULL");
+  await sql("CREATE UNIQUE INDEX IF NOT EXISTS idx_postes_secret_token ON postes(secret_token) WHERE secret_token IS NOT NULL");
+
+  // 3) Records : trace du poste de pointage. Nullable pour les records
+  // historiques pré-Phase 5 qui n'avaient pas l'info.
+  await sql("ALTER TABLE records ADD COLUMN IF NOT EXISTS station_id INT REFERENCES postes(id) ON DELETE SET NULL");
+  await sql("CREATE INDEX IF NOT EXISTS idx_records_station ON records(station_id)");
+
+  // 4) Security events : audit trail pour actions sensibles.
+  // event_type attendu : pin_fail | pin_lock | pin_create | pin_reset | station_regen
+  // Pas de CHECK CONSTRAINT pour pouvoir ajouter de nouveaux types sans migration.
+  // Liste canonique dans la constante CLOCK_STATES / SECURITY_EVENT_TYPES côté code.
+  await sql("CREATE TABLE IF NOT EXISTS security_events (id SERIAL PRIMARY KEY, event_type TEXT NOT NULL, worker_id INT REFERENCES workers(id) ON DELETE SET NULL, station_id INT REFERENCES postes(id) ON DELETE SET NULL, details JSONB DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ DEFAULT NOW())");
+  await sql("CREATE INDEX IF NOT EXISTS idx_security_events_created ON security_events(created_at DESC)");
+  await sql("CREATE INDEX IF NOT EXISTS idx_security_events_type ON security_events(event_type)");
 }
 
 async function issueSession(role, workerId, hours) {
