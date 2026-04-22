@@ -1,0 +1,13 @@
+{
+  "name": "pointeuse-iziship-agent",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Agent local macOS pour génération automatique dossiers RH vers OneDrive",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "dry-run": "node run.mjs --mode=both --dry-run",
+    "weekly": "node run.mjs --mode=weekly",
+    "monthly": "node run.mjs --mode=monthly"
+  }
+}

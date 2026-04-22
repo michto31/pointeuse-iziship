@@ -9,3 +9,7 @@ node_modules/
 # Tooling local, pas à committer
 .claude/
 deno.lock
+
+# Agent RH local : plists launchd avec chemins absolus de la machine de David,
+# non généralisables entre machines. Créés à la main après clone.
+launchd/
