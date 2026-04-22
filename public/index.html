@@ -193,6 +193,13 @@ tr:hover td{background:#FAFBFD}
 .chat-typing-dot:nth-child(2){animation-delay:.2s}
 .chat-typing-dot:nth-child(3){animation-delay:.4s}
 @keyframes chatBounce{to{transform:translateY(-4px);opacity:.4}}
+.rh-tile{background:var(--white);border:1px solid var(--border);border-radius:var(--radius-sm);padding:18px 16px;cursor:pointer;transition:all .15s;display:flex;flex-direction:column;align-items:flex-start;text-align:left;font-family:inherit;gap:6px;min-height:110px}
+.rh-tile:hover{border-color:var(--accent);transform:translateY(-1px);box-shadow:var(--shadow)}
+.rh-tile:disabled{opacity:.5;cursor:wait;transform:none}
+.rh-tile-icon{font-size:26px;line-height:1}
+.rh-tile-title{font-size:14px;font-weight:700;color:var(--text)}
+.rh-tile-desc{font-size:11px;color:var(--text3);line-height:1.4}
+@media (max-width:480px){.rh-grid{grid-template-columns:1fr !important}}
 </style>
 </head>
 <body>
@@ -830,21 +837,27 @@ async function apiFetch(path,opts){
   if(token)headers['Authorization']='Bearer '+token;
   var res=await fetch(url,Object.assign({},opts,{headers:headers}));
   if(res.status===401){
-    var hadToken=!!token;
-    // Clear BEFORE throw so callers can't read a stale response
-    clearToken();
-    clearSession();
-    if(hadToken){
-      stopEmpCamera();
-      var login=document.getElementById('loginScreen');if(login)login.style.display='flex';
-      var admin=document.getElementById('adminScreen');if(admin)admin.style.display='none';
-      var emp=document.getElementById('empScreen');if(emp)emp.style.display='none';
-      try{toast('Session expirée, reconnectez-vous','error');}catch(e){}
-    }
+    handleUnauthorized401(!!token);
     throw new Error('unauthorized');
   }
   if(!res.ok){var e=await res.json().catch(function(){return{error:'Erreur serveur'};});throw new Error(e.error||'Erreur '+res.status);}
   return res.json();
+}
+
+// Centralized 401 handler used by both apiFetch (JSON) and downloadRhDocument (binary).
+// Clear localStorage + sessionStorage BEFORE callers can read the response,
+// then swap to the login screen and toast — but only if we actually had a token
+// (avoids noisy toast at boot when no session exists yet).
+function handleUnauthorized401(hadToken){
+  clearToken();
+  clearSession();
+  if(hadToken){
+    try{stopEmpCamera();}catch(e){}
+    var login=document.getElementById('loginScreen');if(login)login.style.display='flex';
+    var admin=document.getElementById('adminScreen');if(admin)admin.style.display='none';
+    var emp=document.getElementById('empScreen');if(emp)emp.style.display='none';
+    try{toast('Session expirée, reconnectez-vous','error');}catch(e){}
+  }
 }
 async function apiGet(path){return apiFetch(path);}
 async function apiPost(path,data){return apiFetch(path,{method:'POST',body:JSON.stringify(data)});}
@@ -1055,7 +1068,7 @@ function renderWorkersTable(){
         statusHtml='<span style="font-family:JetBrains Mono,monospace;font-size:12px;">'+arr+'</span>'+arrBadge+'<br><span class="badge '+(isBreak?'badge-break':'badge-present')+'">'+(isBreak?'En pause':'Pr\u00e9sent')+'</span>';
       }
     }
-    return '<tr><td><a href="#" onclick="openWorkerDetail(\''+x.id+'\');return false;" style="text-decoration:none;color:inherit;"><strong style="color:var(--accent);">'+x.name+'</strong></a><br><span style="font-size:11px;color:var(--text3);">'+(x.phone||'')+'</span></td><td>'+(x.agency||'\u2014')+'</td><td><span class="badge '+(bm[x.type]||'')+'">'+(tm[x.type]||x.type)+'</span></td><td style="font-family:JetBrains Mono,monospace;font-size:13px;font-weight:600;">'+schedIn+' \u2192 '+schedOut+'</td><td>'+statusHtml+'</td><td style="font-family:JetBrains Mono,monospace;font-size:11px;">'+(x.badge||'<span style="color:var(--text3);">\u2014</span>')+'</td><td><button class="btn btn-outline btn-sm" onclick="editWorker(\''+x.id+'\')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button> <button class="btn btn-outline btn-sm" onclick="deleteWorker(\''+x.id+'\')" style="color:var(--red);">\u2717</button></td></tr>';
+    return '<tr><td><a href="#" onclick="openWorkerDetail(\''+x.id+'\');return false;" style="text-decoration:none;color:inherit;"><strong style="color:var(--accent);">'+x.name+'</strong></a><br><span style="font-size:11px;color:var(--text3);">'+(x.phone||'')+'</span></td><td>'+(x.agency||'\u2014')+'</td><td><span class="badge '+(bm[x.type]||'')+'">'+(tm[x.type]||x.type)+'</span></td><td style="font-family:JetBrains Mono,monospace;font-size:13px;font-weight:600;">'+schedIn+' \u2192 '+schedOut+'</td><td>'+statusHtml+'</td><td style="font-family:JetBrains Mono,monospace;font-size:11px;">'+(x.badge||'<span style="color:var(--text3);">\u2014</span>')+'</td><td><button class="btn btn-outline btn-sm" onclick="openRhModal('+x.id+')" title="Dossier RH">📂</button> <button class="btn btn-outline btn-sm" onclick="editWorker(\''+x.id+'\')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button> <button class="btn btn-outline btn-sm" onclick="deleteWorker(\''+x.id+'\')" style="color:var(--red);">\u2717</button></td></tr>';
   }).join('');
 }
 
@@ -1973,5 +1986,188 @@ if (typeof origShowPage === 'function') {
   window.showPage = function(p) { origShowPage(p); if (p === 'agent') loadAgentData(); };
 }
 
+// ═══ RH DOSSIER — modal + download dispatcher ═══
+var rhCurrentWorkerId=null;
+var rhPendingDocType=null;
+
+function openRhModal(workerId){
+  var w=lW().find(function(x){return x.id===workerId;});
+  if(!w){toast('Salarié introuvable','error');return;}
+  rhCurrentWorkerId=workerId;
+  document.getElementById('rhModalName').textContent=w.name;
+  var tm={interim:'Intérimaire',cdi:'CDI',cdd:'CDD'};
+  var parts=[];
+  if(w.badge)parts.push('badge: '+w.badge);
+  if(w.agency)parts.push(w.agency);
+  parts.push(tm[w.type]||w.type);
+  parts.push((w.schedIn||'08:00')+' → '+(w.schedOut||'16:00'));
+  document.getElementById('rhModalMeta').textContent=parts.join(' · ');
+  document.getElementById('rhModal').classList.add('open');
+}
+
+function closeRhModal(){
+  document.getElementById('rhModal').classList.remove('open');
+  rhCurrentWorkerId=null;
+}
+
+function handleRhTile(docType){
+  if(rhCurrentWorkerId==null)return;
+  if(docType==='worker_profile'){
+    downloadRhDocument(rhCurrentWorkerId,docType,null,null);
+    return;
+  }
+  openRhPeriodPicker(docType);
+}
+
+function prevMonthYYYYMM(){
+  var d=new Date();d.setDate(1);d.setMonth(d.getMonth()-1);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+}
+
+function openRhPeriodPicker(docType){
+  rhPendingDocType=docType;
+  var titles={monthly_recap:'Récap mensuel — choisir le mois',breaks_history:'Pauses &amp; retards — choisir le mois',hours_excel:'Heures (Excel) — choisir le mois'};
+  document.getElementById('rhPeriodTitle').innerHTML=titles[docType]||'Choisir le mois';
+  var input=document.getElementById('rhPeriodInput');
+  input.value=prevMonthYYYYMM();
+  var btn=document.getElementById('rhPeriodBtn');
+  btn.disabled=false;btn.textContent='Télécharger';
+  document.getElementById('rhPeriodModal').classList.add('open');
+  setTimeout(function(){input.focus();},50);
+}
+
+function closeRhPeriodModal(){
+  document.getElementById('rhPeriodModal').classList.remove('open');
+  rhPendingDocType=null;
+}
+
+async function confirmPeriodDownload(){
+  var period=document.getElementById('rhPeriodInput').value;
+  if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(period)){toast('Mois invalide, format attendu YYYY-MM','error');return;}
+  if(rhCurrentWorkerId==null||!rhPendingDocType){toast('Erreur interne, rouvrez la modale','error');return;}
+  var btn=document.getElementById('rhPeriodBtn');
+  var docType=rhPendingDocType;
+  var workerId=rhCurrentWorkerId;
+  try{
+    await downloadRhDocument(workerId,docType,period,btn);
+    closeRhPeriodModal();
+  }catch(e){/* toast already shown by downloadRhDocument */}
+}
+
+async function downloadRhDocument(workerId,docType,period,btnEl){
+  var body={worker_id:workerId,doc_type:docType};
+  if(period)body.period=period;
+  var headers={'Content-Type':'application/json'};
+  var token=getToken();
+  if(token)headers['Authorization']='Bearer '+token;
+  var origLabel=null;
+  if(btnEl){origLabel=btnEl.textContent;btnEl.disabled=true;btnEl.textContent='Génération…';}
+  try{
+    var res=await fetch(API_BASE+'/rh/generate',{method:'POST',headers:headers,body:JSON.stringify(body)});
+    if(res.status===401){
+      handleUnauthorized401(!!token);
+      throw new Error('unauthorized');
+    }
+    if(!res.ok){
+      var errJson={};
+      try{errJson=await res.json();}catch(e){}
+      var msg=errJson.error||('Erreur '+res.status);
+      if(res.status===404)msg='Salarié introuvable, rafraîchissez la liste';
+      throw new Error(msg);
+    }
+    var cd=res.headers.get('Content-Disposition')||'';
+    var m=/filename="([^"]+)"/.exec(cd);
+    var filename=(m&&m[1])||('document-'+docType+'-'+(period||'')+'.bin');
+    var blob=await res.blob();
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');
+    a.href=url;a.download=filename;
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+    setTimeout(function(){URL.revokeObjectURL(url);},1000);
+    toast('Document téléchargé ✓');
+  }catch(e){
+    if(e.message!=='unauthorized')toast('Erreur: '+e.message,'error');
+    throw e;
+  }finally{
+    if(btnEl){btnEl.disabled=false;btnEl.textContent=origLabel||'Télécharger';}
+  }
+}
+
+// Modals HTML is injected after this <script> block, so we must wait until
+// the DOM is fully parsed before wiring listeners. Without this wrapper,
+// document.getElementById('rhModal') returns null at parse time and the
+// whole script block throws before renderWorkersTable() ever runs.
+document.addEventListener('DOMContentLoaded',function(){
+  var rhModalEl=document.getElementById('rhModal');
+  var rhPeriodModalEl=document.getElementById('rhPeriodModal');
+  if(!rhModalEl||!rhPeriodModalEl)return;
+
+  // Event delegation for tile clicks (avoids inline onclick with variables)
+  rhModalEl.addEventListener('click',function(e){
+    var tile=e.target.closest('.rh-tile');
+    if(!tile)return;
+    var doc=tile.getAttribute('data-doc');
+    if(!doc)return;
+    // disable all tiles during download for worker_profile (no sub-modal to park the spinner)
+    var tiles=document.querySelectorAll('#rhModal .rh-tile');
+    if(doc==='worker_profile'){
+      var title=tile.querySelector('.rh-tile-title');
+      var orig=title.textContent;
+      tiles.forEach(function(t){t.disabled=true;});
+      title.textContent='Génération…';
+      downloadRhDocument(rhCurrentWorkerId,doc,null,null).then(function(){
+        title.textContent=orig;tiles.forEach(function(t){t.disabled=false;});
+      }).catch(function(){
+        title.textContent=orig;tiles.forEach(function(t){t.disabled=false;});
+      });
+      return;
+    }
+    handleRhTile(doc);
+  });
+
+  // Click on overlay background closes the modal (mirror of other modals behavior)
+  rhModalEl.addEventListener('click',function(e){if(e.target===this)closeRhModal();});
+  rhPeriodModalEl.addEventListener('click',function(e){if(e.target===this)closeRhPeriodModal();});
+});
+
 </script>
+
+<!-- ═══ RH: modale de choix de document ═══ -->
+<div class="modal-overlay" id="rhModal">
+<div class="modal" style="max-width:540px;">
+<div class="modal-header">
+<div>Dossier RH &mdash; <span id="rhModalName"></span></div>
+<div id="rhModalMeta" style="font-size:11px;color:var(--text3);font-weight:400;margin-top:4px;"></div>
+</div>
+<div class="modal-body">
+<div class="rh-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+<button type="button" class="rh-tile" data-doc="worker_profile"><span class="rh-tile-icon">&#128196;</span><span class="rh-tile-title">Fiche salari&eacute;</span><span class="rh-tile-desc">Informations personnelles et poste</span></button>
+<button type="button" class="rh-tile" data-doc="monthly_recap"><span class="rh-tile-icon">&#128202;</span><span class="rh-tile-title">R&eacute;cap mensuel</span><span class="rh-tile-desc">KPIs du mois (heures, retards, OT)</span></button>
+<button type="button" class="rh-tile" data-doc="breaks_history"><span class="rh-tile-icon">&#9208;&#65039;</span><span class="rh-tile-title">Pauses &amp; retards</span><span class="rh-tile-desc">D&eacute;tail chronologique</span></button>
+<button type="button" class="rh-tile" data-doc="hours_excel"><span class="rh-tile-icon">&#128215;</span><span class="rh-tile-title">Heures (Excel)</span><span class="rh-tile-desc">Export tabulaire pour comptabilit&eacute;</span></button>
+</div>
+</div>
+<div class="modal-footer">
+<button class="btn btn-outline" onclick="closeRhModal()">Fermer</button>
+</div>
+</div>
+</div>
+
+<!-- ═══ RH: sous-modale sélecteur de mois ═══ -->
+<div class="modal-overlay" id="rhPeriodModal" style="z-index:250;">
+<div class="modal" style="max-width:380px;">
+<div class="modal-header" id="rhPeriodTitle">Choisir le mois</div>
+<div class="modal-body">
+<div class="form-group">
+<label class="form-label">Mois &agrave; exporter</label>
+<!-- TODO Safari < macOS Sequoia : <input type="month"> n'est pas pleinement supporté (renvoie une string libre). À terme, fallback en 2 <select> (année + mois) si navigator.userAgent inclut Safari sans Chrome. Non bloquant : app utilisée en Chrome principalement. -->
+<input type="month" id="rhPeriodInput" class="form-control" style="font-family:JetBrains Mono,monospace;">
+</div>
+</div>
+<div class="modal-footer">
+<button class="btn btn-outline" onclick="closeRhPeriodModal()">Annuler</button>
+<button class="btn btn-primary" id="rhPeriodBtn" onclick="confirmPeriodDownload()">T&eacute;l&eacute;charger</button>
+</div>
+</div>
+</div>
 </body></html>
