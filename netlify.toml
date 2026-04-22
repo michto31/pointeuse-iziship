@@ -4,6 +4,7 @@
 
 [functions]
   node_bundler = "esbuild"
+  external_node_modules = ["pdfkit", "xlsx"]
 
 [[redirects]]
   from = "/api/*"

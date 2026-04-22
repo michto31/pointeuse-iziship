@@ -162,6 +162,13 @@ exports.handler = async function (event) {
     }
     if (method === "POST" && path === "qr-secret/regenerate") { await requireAuth(event, "admin"); var s = genSecret(); await sql("INSERT INTO settings (key,value) VALUES ('qr_secret',$1) ON CONFLICT (key) DO UPDATE SET value=$1", [s]); return json({ secret: s }); }
     if (method === "POST" && path === "scan") return await handleScan(body);
+
+    if (method === "POST" && path === "rh/generate") {
+      await requireAuth(event, "admin");
+      var rh = require("./rh/generate");
+      return await rh.handle(event, body, sql);
+    }
+
     return err("Route: " + path, 404);
   } catch (e) {
     if (e && e.status) return json({ error: e.message }, e.status);
