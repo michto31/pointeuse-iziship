@@ -120,6 +120,72 @@ async function insertStationUnique(name) {
   throw err;
 }
 
+// ─── Phase 5 — Clock (pointage) : helpers ──────────────────────────────
+
+// Formatte l'heure courante en HH:MM (timezone Europe/Paris). Cohérent avec
+// le format existant de records.arrival / departure / breaks[].start/end.
+function getParisHHMM() {
+  return new Date().toLocaleTimeString("fr-FR", {
+    timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit"
+  });
+}
+
+// Date du jour en YYYY-MM-DD, timezone Europe/Paris.
+// Astuce : locale "sv-SE" (suédois) donne le format ISO naturellement.
+function getParisDate() {
+  return new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Paris" });
+}
+
+// Exécute un batch de queries Neon en UNE transaction HTTP (pattern déjà
+// utilisé pour le seed de records Phase 2). Atomic : toutes les queries
+// réussissent ou tout rollback côté Neon.
+async function sqlTx(queries) {
+  var url = getDbUrl();
+  if (!url) throw new Error("No DATABASE_URL");
+  var u = new URL(url);
+  var endpoint = "https://" + u.hostname + "/sql";
+  var res = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Neon-Connection-String": url,
+      "Neon-Batch-Isolation-Level": "Serializable"
+    },
+    body: JSON.stringify({ queries: queries })
+  });
+  if (!res.ok) { var t = await res.text(); throw new Error("DB TX " + res.status + ": " + t.substring(0, 200)); }
+  var data = await res.json();
+  if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+  // Normalise chaque result.rows en tableau d'objets (comme sql() le fait).
+  return (data.results || []).map(function (r) {
+    var fields = r.fields || [];
+    var rows = r.rows || [];
+    return rows.map(function (row) {
+      if (!Array.isArray(row)) return row;
+      var obj = {};
+      for (var i = 0; i < fields.length; i++) obj[fields[i].name] = row[i];
+      return obj;
+    });
+  });
+}
+
+// Transitions state machine pour /api/clock. Noms d'action en anglais pour
+// rester cohérent avec CLOCK_STATES.
+var STATE_TRANSITIONS = {
+  arrival:     { from: ["idle"],                to: "at_work" },
+  break_start: { from: ["at_work"],             to: "on_break" },
+  break_end:   { from: ["on_break"],            to: "at_work" },
+  departure:   { from: ["at_work", "on_break"], to: "idle" }
+};
+
+function allowedActionsFor(state) {
+  var out = [];
+  for (var act in STATE_TRANSITIONS) {
+    if (STATE_TRANSITIONS[act].from.indexOf(state) >= 0) out.push(act);
+  }
+  return out;
+}
+
 // ─── Phase 5 — PIN workers : helpers ────────────────────────────────────
 
 // Vérifie un station_token : renvoie {id} si valide ET active=true, null sinon.
@@ -491,6 +557,136 @@ exports.handler = async function (event) {
       await respondAfterDelay(pvStart, 500);
       if (pvResult && pvResult.ok) return json(pvResult, 200);
       return json({ error: "PIN incorrect" }, 401);
+    }
+
+    // POST /api/clock [auth worker] — pointage arrivée/départ/pauses.
+    // Worker identité = session (pas de worker_id dans le body, évite dup source de bug).
+    // station_token (pas station_id) = preuve de présence physique à CHAQUE clock.
+    // State machine appliquée avant tout écrit. Atomicité record + workers.last_clock_state
+    // via sqlTx (batch transaction Neon Serializable).
+    if (method === "POST" && path === "clock") {
+      var clkAuth = await requireAuth(event, "worker");
+      var clkWorkerId = clkAuth.worker_id;
+      if (!clkWorkerId) return err("Session sans worker_id", 401);
+
+      var clkAction = body && body.action;
+      if (!STATE_TRANSITIONS[clkAction]) return err("action invalide (attendu: " + Object.keys(STATE_TRANSITIONS).join(", ") + ")", 400);
+
+      var clkStation = await verifyStationToken(body && body.station_token);
+      if (!clkStation) return err("Station invalide", 401);
+
+      // Source de vérité = DB workers.last_clock_state (pas la session, qui pourrait dater).
+      var clkWorker = await sql1("SELECT id, name, agency, last_clock_state FROM workers WHERE id=$1", [clkWorkerId]);
+      if (!clkWorker) return err("Worker introuvable", 404);
+      var clkCurrentState = clkWorker.last_clock_state || "idle";
+
+      // Validation transition
+      var clkSpec = STATE_TRANSITIONS[clkAction];
+      if (clkSpec.from.indexOf(clkCurrentState) < 0) {
+        return json({
+          error: "Action invalide pour l'état actuel",
+          current_state: clkCurrentState,
+          allowed_actions: allowedActionsFor(clkCurrentState)
+        }, 409);
+      }
+      var clkNewState = clkSpec.to;
+      var clkTime = getParisHHMM();
+      var clkDate = getParisDate();
+
+      if (clkAction === "arrival") {
+        // INSERT nouveau record + UPDATE state. Plusieurs records par jour autorisés
+        // (journée split 9h-12h / 14h-18h).
+        var arrivalTx = await sqlTx([
+          {
+            query: "INSERT INTO records (worker_id, worker_name, agency, date, arrival, station_id, breaks) " +
+                   "VALUES ($1, $2, $3, $4, $5, $6, '[]'::jsonb) RETURNING *",
+            params: [clkWorkerId, clkWorker.name, clkWorker.agency || "", clkDate, clkTime, clkStation.id]
+          },
+          {
+            query: "UPDATE workers SET last_clock_state=$1 WHERE id=$2 RETURNING id",
+            params: [clkNewState, clkWorkerId]
+          }
+        ]);
+        return json({ ok: true, action: clkAction, new_state: clkNewState, record: arrivalTx[0][0] }, 201);
+      }
+
+      // Non-arrival actions : on update la ligne ouverte du jour (ORDER BY id DESC LIMIT 1
+      // gère le cas d'une journée split avec un record de matin fermé + un record après-midi ouvert).
+      var openRec = await sql1(
+        "SELECT * FROM records WHERE worker_id=$1 AND date=$2 AND departure IS NULL " +
+        "ORDER BY id DESC LIMIT 1",
+        [clkWorkerId, clkDate]
+      );
+      if (!openRec) {
+        return json({
+          error: "Aucun pointage ouvert pour aujourd'hui",
+          current_state: clkCurrentState,
+          allowed_actions: allowedActionsFor(clkCurrentState)
+        }, 409);
+      }
+      // breaks peut revenir en string JSON selon le driver — normaliser.
+      var clkBreaks = openRec.breaks;
+      if (typeof clkBreaks === "string") { try { clkBreaks = JSON.parse(clkBreaks); } catch (e) { clkBreaks = []; } }
+      if (!Array.isArray(clkBreaks)) clkBreaks = [];
+
+      if (clkAction === "break_start") {
+        clkBreaks.push({ start: clkTime });
+        var bsTx = await sqlTx([
+          {
+            query: "UPDATE records SET breaks=$1::jsonb, updated_at=NOW() WHERE id=$2 RETURNING *",
+            params: [JSON.stringify(clkBreaks), openRec.id]
+          },
+          {
+            query: "UPDATE workers SET last_clock_state=$1 WHERE id=$2 RETURNING id",
+            params: [clkNewState, clkWorkerId]
+          }
+        ]);
+        return json({ ok: true, action: clkAction, new_state: clkNewState, record: bsTx[0][0] });
+      }
+
+      if (clkAction === "break_end") {
+        if (clkBreaks.length === 0 || clkBreaks[clkBreaks.length - 1].end) {
+          return err("Aucune pause ouverte à fermer", 409);
+        }
+        clkBreaks[clkBreaks.length - 1].end = clkTime;
+        var beTx = await sqlTx([
+          {
+            query: "UPDATE records SET breaks=$1::jsonb, updated_at=NOW() WHERE id=$2 RETURNING *",
+            params: [JSON.stringify(clkBreaks), openRec.id]
+          },
+          {
+            query: "UPDATE workers SET last_clock_state=$1 WHERE id=$2 RETURNING id",
+            params: [clkNewState, clkWorkerId]
+          }
+        ]);
+        return json({ ok: true, action: clkAction, new_state: clkNewState, record: beTx[0][0] });
+      }
+
+      // departure — si state=on_break, auto-ferme la pause ouverte avec auto_closed:true
+      // (flag lu plus tard par le module RH pour afficher un warning dans les PDFs).
+      var autoClosedBreak = false;
+      if (clkCurrentState === "on_break" && clkBreaks.length > 0 && !clkBreaks[clkBreaks.length - 1].end) {
+        clkBreaks[clkBreaks.length - 1].end = clkTime;
+        clkBreaks[clkBreaks.length - 1].auto_closed = true;
+        autoClosedBreak = true;
+      }
+      var depTx = await sqlTx([
+        {
+          query: "UPDATE records SET departure=$1, breaks=$2::jsonb, updated_at=NOW() WHERE id=$3 RETURNING *",
+          params: [clkTime, JSON.stringify(clkBreaks), openRec.id]
+        },
+        {
+          query: "UPDATE workers SET last_clock_state=$1 WHERE id=$2 RETURNING id",
+          params: [clkNewState, clkWorkerId]
+        }
+      ]);
+      return json({
+        ok: true,
+        action: clkAction,
+        new_state: clkNewState,
+        record: depTx[0][0],
+        auto_closed_break: autoClosedBreak
+      });
     }
 
     // POST /api/workers/:id/pin/reset [admin] — wipe pin_hash + attempts + lock
