@@ -490,20 +490,31 @@ exports.handler = async function (event) {
     // POST /api/stations/verify [public, rate-limited 10/min/IP] — accepte
     // {token} (depuis URL du QR) OU {code_short} (saisie manuelle, normalisée).
     // Rejette 404 si inconnu, 403 si station.active=false.
+    // Réponse différentielle (principe du moindre privilège) :
+    //  - input {token}       → {ok, station:{id, name}}               (client a déjà le token)
+    //  - input {code_short}  → {ok, station:{id, name, secret_token}} (fallback manuel
+    //    où le client a besoin du secret_token pour les appels pin/* et clock suivants).
+    // Justification : le code_short et le secret_token sont tous deux imprimés ensemble
+    // sur le QR physique au dépôt, donc connaître l'un établit la même preuve de présence
+    // physique que l'autre. Rate-limited 10/min/IP suffisant vs brute force du code_short
+    // (alphabet 31 chars, format XXX-XXX-XXXX, entropie 31^10 ≈ 8e14).
     if (method === "POST" && path === "stations/verify") {
       if (!checkRateLimit(event, 10)) return json({ error: "Too many requests" }, 429);
       var verifyToken = body.token && String(body.token).trim();
       var verifyCode = body.code_short ? normalizeStationCode(body.code_short) : null;
       if (!verifyToken && !verifyCode) return err("token ou code_short requis");
+      var viaCode = !verifyToken && !!verifyCode;
       var stationRow;
       if (verifyToken) {
         stationRow = await sql1("SELECT id, name, active FROM postes WHERE secret_token=$1", [verifyToken]);
       } else {
-        stationRow = await sql1("SELECT id, name, active FROM postes WHERE code_short=$1", [verifyCode]);
+        stationRow = await sql1("SELECT id, name, active, secret_token FROM postes WHERE code_short=$1", [verifyCode]);
       }
       if (!stationRow) return err("Station inconnue", 404);
       if (!stationRow.active) return err("Station désactivée", 403);
-      return json({ ok: true, station: { id: stationRow.id, name: stationRow.name } });
+      var stationPayload = { id: stationRow.id, name: stationRow.name };
+      if (viaCode) stationPayload.secret_token = stationRow.secret_token;
+      return json({ ok: true, station: stationPayload });
     }
 
     // ═══ Phase 5 — PIN workers ═══
@@ -572,6 +583,33 @@ exports.handler = async function (event) {
       await respondAfterDelay(pvStart, 500);
       if (pvResult && pvResult.ok) return json(pvResult, 200);
       return json({ error: "PIN incorrect" }, 401);
+    }
+
+    // GET /api/clock/state [auth worker] — renvoie le state machine courant + les
+    // actions autorisées + infos worker sûres. Utilisé par le front salarié pour
+    // skip l'écran PIN quand un token worker valide est en localStorage (shortcut
+    // UX) — le worker clique sa tuile, si token valide → GET state → goto action.
+    // Pas de logging (appelé à chaque entrée rapide), pas de rate limit (auth worker).
+    if (method === "GET" && path === "clock/state") {
+      var stateAuth = await requireAuth(event, "worker");
+      var stateWorkerId = stateAuth.worker_id;
+      if (!stateWorkerId) return err("Session sans worker_id", 401);
+      var stateWorker = await sql1(
+        "SELECT id, name, type, agency, last_clock_state FROM workers WHERE id=$1",
+        [stateWorkerId]
+      );
+      if (!stateWorker) return err("Worker introuvable", 404);
+      var stateCurrent = stateWorker.last_clock_state || "idle";
+      return json({
+        last_clock_state: stateCurrent,
+        allowed_actions: allowedActionsFor(stateCurrent),
+        worker: {
+          id: stateWorker.id,
+          name: stateWorker.name,
+          type: stateWorker.type,
+          agency: stateWorker.agency || ""
+        }
+      });
     }
 
     // POST /api/clock [auth worker] — pointage arrivée/départ/pauses.
