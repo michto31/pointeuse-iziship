@@ -1012,11 +1012,12 @@ function showEmpResult(msg,bg,color){
   setTimeout(function(){el.innerHTML='';},4000);
 }
 
-// Update employee clock every second
-setInterval(function(){
-  var sess=getSession();
-  if(sess&&sess.role==='worker')updateEmpView();
-},1000);
+// Phase 5 : empScreen (Phase 1-4) est déprécié, remplacé par punchScreen.
+// Le tick d'horloge legacy qui rafraîchissait empScreen via updateEmpView() est
+// neutralisé — il gardait empScreen "vivant" et causait sur iOS un re-render
+// parasite de l'ancienne vue si une session worker legacy traînait en sessionStorage.
+// updateEmpView() + showEmployeeView() restent déclarés (dead code) le temps
+// d'un cleanup final en étape 8, mais plus jamais invoqués automatiquement.
 
 // Auth init handled in startup() below
 // ═══ API DATA LAYER ═══
@@ -2752,6 +2753,17 @@ document.addEventListener('DOMContentLoaded',function(){
   if(getToken() && tokenIsExpiringSoon()){
     clearToken();
     clearSession();
+  }
+  // Phase 5 fix — invalider les sessions worker LEGACY (Phase 1-4) qui traînent
+  // en sessionStorage. Elles ne sont plus exploitables par Phase 5 (le worker
+  // passe par PIN+station, pas par la tab "Salarié" de loginScreen), et leur
+  // présence déclenchait des effets parasites via updateEmpView() (avant la
+  // neutralisation du tick 1s ci-dessus). Belt-and-braces : on laisse tomber
+  // token + session si role='worker' détecté au boot.
+  var bootSess=getSession();
+  if(bootSess && bootSess.role==='worker'){
+    clearSession();
+    clearToken();
   }
   await initData();
   refreshSel();renderLiveList();
