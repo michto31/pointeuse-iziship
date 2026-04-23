@@ -1999,6 +1999,12 @@ async function punchPublicFetch(path,opts,extraHeaders){
 // ─── Navigation ────────────────────────────────────────────────────────
 function goToPunchScreen(letter){
   punchFlow.screen=letter;
+  // Remet le scroll en haut à chaque transition d'écran. Sinon, sur iOS après
+  // saisie PIN (keypad au milieu du viewport), passer à D laisse le scroll bas
+  // et les boutons action sont off-screen. "instant" > "smooth" pour éviter
+  // le flash visuel de scroll.
+  try{window.scrollTo({top:0,left:0,behavior:'instant'});}
+  catch(e){window.scrollTo(0,0);}
   ['A','B','C','D','E'].forEach(function(s){
     var el=document.getElementById('punch'+s);
     if(el)el.hidden=(s!==letter);
