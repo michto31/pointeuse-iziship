@@ -65,6 +65,60 @@ async function logSecurityEvent(eventType, workerId, stationId, details) {
   );
 }
 
+// ─── Phase 5 — Stations : code_short et secret_token ─────────────────────
+// Alphabet sans ambiguïté visuelle (exclu : 0 O 1 I L) — 31 chars, entropie 31^10
+// ≈ 8e14 pour le code XXX-XXX-XXXX, largement suffisant pour quelques centaines
+// de stations. Le secret_token utilise randomBytes(64) → 128 chars hex.
+var STATION_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+function genStationCode() {
+  function seg(n) {
+    var bytes = crypto.randomBytes(n);
+    var out = "";
+    for (var i = 0; i < n; i++) out += STATION_ALPHABET.charAt(bytes[i] % STATION_ALPHABET.length);
+    return out;
+  }
+  return seg(3) + "-" + seg(3) + "-" + seg(4);
+}
+function genStationSecret() { return crypto.randomBytes(64).toString("hex"); }
+
+// Normalise l'input utilisateur en saisie manuelle de code_short.
+// Adaptation vs spec initiale (trim() → strip aussi les tirets de bord)
+// pour accepter p.ex. " TLS-SAL-4782 " → "TLS-SAL-4782".
+function normalizeStationCode(s) {
+  return String(s || "")
+    .replace(/[\s_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toUpperCase();
+}
+
+// Insert avec retry sur collision (astronomiquement improbable, mais filet de
+// sécurité + log explicite si ça arrivait un jour pour détecter un bug DB).
+async function insertStationUnique(name) {
+  for (var attempt = 0; attempt < 5; attempt++) {
+    var code = genStationCode();
+    var existing = await sql1("SELECT id FROM postes WHERE code_short=$1", [code]);
+    if (existing) continue;
+    var secret = genStationSecret();
+    try {
+      var row = await sql1(
+        "INSERT INTO postes (name, code_short, secret_token, active) VALUES ($1, $2, $3, true) " +
+        "RETURNING id, name, code_short, secret_token, active, created_at",
+        [name, code, secret]
+      );
+      if (row) return row;
+    } catch (e) {
+      // Race rarissime entre SELECT et INSERT (UNIQUE index filet de secours).
+      var msg = (e && e.message) || "";
+      if (/unique|duplicate|23505|idx_postes_code_short/i.test(msg)) continue;
+      throw e;
+    }
+  }
+  console.error("[" + new Date().toISOString() + "] STATION_CODE_COLLISION_SATURATION name=" + JSON.stringify(name) + " — 5 collisions consécutives. Alphabet saturé improbable, vérifier la DB.");
+  var err = new Error("STATION_CODE_COLLISION_SATURATION");
+  err.status = 500;
+  throw err;
+}
+
 // In-process rate limiter (Map keyed by IP). Intentionally NOT persisted to DB:
 // - Cold starts reset the window, so this is a best-effort slowdown on scraping,
 //   not a hard boundary. That's fine for the only public list endpoint we expose
@@ -176,6 +230,102 @@ exports.handler = async function (event) {
     if (method === "GET" && path === "postes") { await requireAuth(event, "admin"); return json(await sql("SELECT * FROM postes ORDER BY name")); }
     if (method === "POST" && path === "postes") { await requireAuth(event, "admin"); if (!body.name) return err("Nom requis"); return json(await sql1("INSERT INTO postes (name,location) VALUES ($1,$2) RETURNING *", [body.name, body.location||""]), 201); }
     if (method === "DELETE" && seg[0] === "postes" && seg[1]) { await requireAuth(event, "admin"); await sql("DELETE FROM postes WHERE id=$1", [parseInt(seg[1])]); return json({ ok: true }); }
+
+    // ═══ Phase 5 — Stations (postes étendus avec code_short + secret_token) ═══
+    // Les anciens routes /api/postes restent actifs pour ne pas casser l'UI admin
+    // legacy (refondue à l'étape 5). Les routes /api/stations sont les nouvelles.
+
+    // GET /api/stations — liste + nb de pointages 30j (JOIN records.station_id).
+    // NE renvoie JAMAIS secret_token (visible uniquement à la création et au regen).
+    if (method === "GET" && path === "stations") {
+      await requireAuth(event, "admin");
+      return json(await sql(
+        "SELECT p.id, p.name, p.code_short, p.active, p.created_at, " +
+        "  COUNT(r.id) FILTER (WHERE r.date >= CURRENT_DATE - INTERVAL '30 days')::int AS records_30d " +
+        "FROM postes p LEFT JOIN records r ON r.station_id = p.id " +
+        "GROUP BY p.id ORDER BY p.active DESC, p.name"
+      ));
+    }
+
+    // POST /api/stations — crée une station avec code_short + secret_token auto-générés.
+    // La réponse 201 inclut explicitement secret_token (seul moment où l'admin le voit,
+    // hors regenerate-token).
+    if (method === "POST" && path === "stations") {
+      await requireAuth(event, "admin");
+      if (!body.name || !String(body.name).trim()) return err("Nom requis");
+      var newStation = await insertStationUnique(String(body.name).trim());
+      return json(newStation, 201);
+    }
+
+    // PUT /api/stations/:id — rename et/ou toggle active.
+    // Ne touche pas au secret_token (nécessite l'endpoint regenerate-token dédié).
+    if (method === "PUT" && seg[0] === "stations" && seg[1] && !seg[2]) {
+      await requireAuth(event, "admin");
+      var updated = await sql1(
+        "UPDATE postes SET name = COALESCE($1, name), active = COALESCE($2, active) " +
+        "WHERE id = $3 RETURNING id, name, code_short, active",
+        [body.name ? String(body.name).trim() : null, typeof body.active === "boolean" ? body.active : null, parseInt(seg[1])]
+      );
+      return updated ? json(updated) : err("Introuvable", 404);
+    }
+
+    // DELETE /api/stations/:id — soft delete (active=false). Pas de DELETE hard :
+    // on préserve les FK records.station_id historiques.
+    if (method === "DELETE" && seg[0] === "stations" && seg[1] && !seg[2]) {
+      await requireAuth(event, "admin");
+      var softDel = await sql1("UPDATE postes SET active=false WHERE id=$1 RETURNING id", [parseInt(seg[1])]);
+      return softDel ? json({ ok: true, soft_deleted: true, id: softDel.id }) : err("Introuvable", 404);
+    }
+
+    // POST /api/stations/:id/regenerate-token — régénère code_short ET secret_token.
+    // Journalise dans security_events. Réponse inclut le nouveau secret (seul moment
+    // de visibilité après ce regen).
+    if (method === "POST" && seg[0] === "stations" && seg[1] && seg[2] === "regenerate-token") {
+      var authInfo = await requireAuth(event, "admin");
+      var stationId = parseInt(seg[1]);
+      var existingStation = await sql1("SELECT id, name FROM postes WHERE id=$1", [stationId]);
+      if (!existingStation) return err("Introuvable", 404);
+      var newCode = null;
+      for (var i = 0; i < 5; i++) {
+        var candidate = genStationCode();
+        var collision = await sql1("SELECT id FROM postes WHERE code_short=$1 AND id!=$2", [candidate, stationId]);
+        if (!collision) { newCode = candidate; break; }
+      }
+      if (!newCode) {
+        console.error("[" + new Date().toISOString() + "] STATION_CODE_COLLISION_SATURATION (regen) id=" + stationId + " name=" + JSON.stringify(existingStation.name));
+        return err("Collision code_short (saturation)", 500);
+      }
+      var newSecret = genStationSecret();
+      var regenRow = await sql1(
+        "UPDATE postes SET code_short=$1, secret_token=$2 WHERE id=$3 " +
+        "RETURNING id, name, code_short, secret_token, active",
+        [newCode, newSecret, stationId]
+      );
+      await logSecurityEvent("station_regen", null, stationId, {
+        station_name: existingStation.name,
+        admin_worker_id: authInfo.worker_id
+      });
+      return json(regenRow);
+    }
+
+    // POST /api/stations/verify [public, rate-limited 10/min/IP] — accepte
+    // {token} (depuis URL du QR) OU {code_short} (saisie manuelle, normalisée).
+    // Rejette 404 si inconnu, 403 si station.active=false.
+    if (method === "POST" && path === "stations/verify") {
+      if (!checkRateLimit(event, 10)) return json({ error: "Too many requests" }, 429);
+      var verifyToken = body.token && String(body.token).trim();
+      var verifyCode = body.code_short ? normalizeStationCode(body.code_short) : null;
+      if (!verifyToken && !verifyCode) return err("token ou code_short requis");
+      var stationRow;
+      if (verifyToken) {
+        stationRow = await sql1("SELECT id, name, active FROM postes WHERE secret_token=$1", [verifyToken]);
+      } else {
+        stationRow = await sql1("SELECT id, name, active FROM postes WHERE code_short=$1", [verifyCode]);
+      }
+      if (!stationRow) return err("Station inconnue", 404);
+      if (!stationRow.active) return err("Station désactivée", 403);
+      return json({ ok: true, station: { id: stationRow.id, name: stationRow.name } });
+    }
 
     if (method === "GET" && path === "qr-secret") {
       var row = await sql1("SELECT value FROM settings WHERE key='qr_secret'");
