@@ -481,7 +481,13 @@ exports.handler = async function (event) {
       if (!checkRateLimit(event, 5)) return json({ error: "Too many requests" }, 429);
       var pvStart = Date.now();
       var pvResult = await handlePinVerifyInner(event, body, seg);
-      await respondAfterDelay(pvStart, 200);
+      // Floor à 500ms : après ajout de runDummyBcrypt() sur les chemins rapides,
+      // le delta côté serveur était encore ~70ms (fail ~430ms, succès ~500ms)
+      // à cause des coûts I/O asymétriques (INSERT sessions vs INSERT log).
+      // Le floor à 500ms couvre le chemin le plus lent (succès complet) et
+      // ramène tous les chemins au plafond. Tradeoff UX : +300ms vs floor 200ms
+      // mais le screen PIN a un loader, c'est acceptable.
+      await respondAfterDelay(pvStart, 500);
       if (pvResult && pvResult.ok) return json(pvResult, 200);
       return json({ error: "PIN incorrect" }, 401);
     }
