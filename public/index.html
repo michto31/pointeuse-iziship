@@ -201,6 +201,13 @@ tr:hover td{background:#FAFBFD}
 .punch-change-btn:hover{border-color:var(--accent);color:var(--accent)}
 .punch-context{font-size:12px;color:var(--text3);text-align:right;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .punch-section{flex:1;display:flex;flex-direction:column;padding:20px 16px}
+/* L'attribut HTML [hidden] est normalement equivalent a display:none, mais notre
+   regle .punch-section{display:flex} le surcharge. On force avec !important pour
+   garantir l'invisibilite des sections masquees. Meme probleme avec les sub-flows
+   C (punchPinFlow vs punchLockedFlow) qui utilisent aussi display:flex via un
+   style inline ou une regle parente. */
+.punch-section[hidden]{display:none !important}
+#punchPinFlow[hidden],#punchLockedFlow[hidden]{display:none !important}
 .punch-a-inner{max-width:720px;margin:0 auto;width:100%;flex:1;display:flex;flex-direction:column}
 .punch-a-head{text-align:center;margin:20px 0 28px}
 .punch-a-head h1{margin:16px 0 0;font-size:22px;font-weight:700;color:var(--text)}
