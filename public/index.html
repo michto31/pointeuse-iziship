@@ -922,9 +922,12 @@ function stopEmpCamera(){
 function loadJsQR(cb){
   if(window.jsQR){cb();return;}
   var s=document.createElement('script');
-  s.src='https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js';
+  // Bundle local : cdnjs a retiré jsQR@1.4.0 (404). Cf public/vendor/jsqr.min.js.
+  // Chemin absolu via window.location.origin pas nécessaire ici car on est sur la
+  // même page (pas une window.open comme pour qrcode.min.js).
+  s.src='/vendor/jsqr.min.js';
   s.onload=cb;
-  s.onerror=function(){toast('Impossible de charger le lecteur QR.','error');stopEmpCamera();};
+  s.onerror=function(){toast('Impossible de charger le lecteur QR.','error');try{stopEmpCamera();}catch(e){}};
   document.head.appendChild(s);
 }
 
