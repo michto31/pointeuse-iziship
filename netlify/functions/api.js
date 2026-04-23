@@ -154,6 +154,19 @@ function safeWorker(w) {
   };
 }
 
+// Dummy hash précalculé au chargement du module. Utilisé pour équilibrer le coût
+// CPU des chemins "rapides" de pin/verify (qui autrement sautent bcrypt) avec les
+// chemins "lents" (wrong PIN / correct PIN). Sans ça, un attaquant peut distinguer
+// "station invalide" (pas de bcrypt, ~50ms) de "wrong PIN" (bcrypt ~100ms).
+var DUMMY_BCRYPT_HASH = bcrypt.hashSync("dummy-never-matches-by-design", 10);
+
+// Exécute un bcrypt.compare "de leurre" avec DUMMY_BCRYPT_HASH pour consommer
+// le même temps CPU que la branche réelle. try/catch silencieux — on ne se soucie
+// pas du résultat, uniquement du temps passé.
+async function runDummyBcrypt(pin) {
+  try { await bcrypt.compare(String(pin || ""), DUMMY_BCRYPT_HASH); } catch (e) {}
+}
+
 // Logic principale de pin/verify, extrait dans une fonction pour pouvoir
 // envelopper l'appel du dispatcher dans un Date.now() + respondAfterDelay.
 // Retourne :
@@ -161,18 +174,21 @@ function safeWorker(w) {
 //   - null sinon (toutes les erreurs — binary response)
 // Les effets de bord (increment attempts, set locked, logSecurityEvent) se
 // font ici avant le return. Le timing-floor se fait APRÈS cette fonction,
-// côté dispatcher, pour couvrir tous les chemins.
+// côté dispatcher, pour couvrir tous les chemins. En plus, chaque chemin d'échec
+// rapide exécute runDummyBcrypt() pour rapprocher le coût CPU de celui du
+// bcrypt.compare réel (chemin match OK / wrong PIN).
 async function handlePinVerifyInner(event, body, seg) {
-  var workerId = parseInt(seg[1]);
-  if (!workerId || workerId <= 0) return null;
   var pin = body && body.pin;
-  if (!pin || !/^\d{6}$/.test(String(pin))) return null;
+  var workerId = parseInt(seg[1]);
+  if (!workerId || workerId <= 0) { await runDummyBcrypt(pin); return null; }
+  if (!pin || !/^\d{6}$/.test(String(pin))) { await runDummyBcrypt(pin); return null; }
   var station = await verifyStationToken(body && body.station_token);
-  if (!station) return null;
+  if (!station) { await runDummyBcrypt(pin); return null; }
   var worker = await sql1("SELECT * FROM workers WHERE id=$1", [workerId]);
-  if (!worker) return null;
-  if (!worker.pin_hash) return null;
+  if (!worker) { await runDummyBcrypt(pin); return null; }
+  if (!worker.pin_hash) { await runDummyBcrypt(pin); return null; }
   if (worker.pin_locked) {
+    await runDummyBcrypt(pin);
     await logSecurityEvent("pin_fail", worker.id, station.id, { reason: "attempted_on_locked" });
     return null;
   }
