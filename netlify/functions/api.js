@@ -57,7 +57,7 @@ async function setClockState(workerId, newState) {
 
 // Types d'événements security_events. Non contraint en DB (TEXT libre) mais toute
 // insertion doit passer par logSecurityEvent() qui vérifie le type.
-var SECURITY_EVENT_TYPES = { pin_fail: true, pin_lock: true, pin_create: true, pin_reset: true, station_regen: true };
+var SECURITY_EVENT_TYPES = { pin_fail: true, pin_lock: true, pin_create: true, pin_reset: true, station_regen: true, station_secret_view: true };
 async function logSecurityEvent(eventType, workerId, stationId, details) {
   if (!SECURITY_EVENT_TYPES[eventType]) throw new Error("Invalid security event type: " + eventType);
   await sql(
@@ -439,6 +439,21 @@ exports.handler = async function (event) {
       await requireAuth(event, "admin");
       var softDel = await sql1("UPDATE postes SET active=false WHERE id=$1 RETURNING id", [parseInt(seg[1])]);
       return softDel ? json({ ok: true, soft_deleted: true, id: softDel.id }) : err("Introuvable", 404);
+    }
+
+    // GET /api/stations/:id/full [admin] — row complet AVEC secret_token.
+    // Utilisé UNIQUEMENT par l'UI admin au moment d'imprimer un QR pour un poste
+    // existant. Chaque consultation est loggée dans security_events pour forensic
+    // ("qui a vu ce secret et quand").
+    if (method === "GET" && seg[0] === "stations" && seg[1] && seg[2] === "full") {
+      var fullAuth = await requireAuth(event, "admin");
+      var fullRow = await sql1("SELECT id, name, code_short, secret_token, active, created_at FROM postes WHERE id=$1", [parseInt(seg[1])]);
+      if (!fullRow) return err("Introuvable", 404);
+      await logSecurityEvent("station_secret_view", null, fullRow.id, {
+        admin_worker_id: fullAuth.worker_id,
+        station_name: fullRow.name
+      });
+      return json(fullRow);
     }
 
     // POST /api/stations/:id/regenerate-token — régénère code_short ET secret_token.

@@ -269,7 +269,7 @@ tr:hover td{background:#FAFBFD}
 <div class="nav-section">Administration</div>
 <nav class="sidebar-nav">
 <button class="nav-item" onclick="openAddModal()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>Ajouter salari&#233;</button>
-<button class="nav-item" onclick="openPosteManager()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>Postes &amp; QR codes</button>
+<button class="nav-item" data-page="stations"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>Postes de pointage</button>
 </nav>
 <div class="sidebar-footer"><div class="sidebar-avatar">DA</div><div><div class="sidebar-user">David</div><div class="sidebar-role">Administrateur</div></div><button class="emp-logout" onclick="logout()" style="margin-left:auto;font-size:11px;">D&#233;co</button></div>
 </aside>
@@ -447,6 +447,18 @@ Bonjour ! Je suis votre assistant RH. Je peux analyser vos donn&#233;es de point
 </div>
 <div class="card-body" id="agentObservations" style="max-height:500px;overflow-y:auto;">Chargement...</div>
 </div>
+</div>
+
+<!-- STATIONS / POSTES DE POINTAGE -->
+<div class="page" id="page-stations">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+<div>
+<h2 style="margin:0;font-size:18px;color:var(--text);">Postes de pointage</h2>
+<p style="margin:4px 0 0;font-size:13px;color:var(--text3);">Chaque poste expose un QR code et un code de secours &agrave; scanner par les salari&#233;s pour pointer.</p>
+</div>
+<button class="btn btn-primary" onclick="openStationAddModal()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Ajouter un poste</button>
+</div>
+<div class="card"><div class="table-wrap"><table><thead><tr><th>Nom</th><th>Code</th><th>Actif</th><th>Pointages 30j</th><th style="text-align:right;">Actions</th></tr></thead><tbody id="stationsTableBody"><tr><td colspan="5" style="text-align:center;color:var(--text3);padding:32px;">Chargement...</td></tr></tbody></table></div></div>
 </div>
 
 </div></div>
@@ -967,6 +979,7 @@ document.querySelectorAll('.nav-item[data-page]').forEach(function(b){
     if(b.dataset.page==='salaries')renderWorkersTable();
     if(b.dataset.page==='rapport')renderRapport();
     if(b.dataset.page==='historique')renderHistorique();
+    if(b.dataset.page==='stations')loadStations();
     if(b.dataset.page!=='scanner')stopCamera();
     document.getElementById('sidebar').classList.remove('open');
   });
@@ -1711,6 +1724,212 @@ document.querySelectorAll('.nav-item[data-page]').forEach(function(b){
   });
 });
 
+// ═══ STATIONS admin page (Phase 5) ═══
+var _stationsCache=[];
+
+async function loadStations(){
+  var tb=document.getElementById('stationsTableBody');
+  try{
+    _stationsCache=await apiGet('stations');
+    renderStationsTable();
+  }catch(e){
+    if(tb)tb.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--red);padding:24px;">Erreur: '+escapeAttr(e.message)+'</td></tr>';
+  }
+}
+
+// HTML escaping pour le texte injecté dans innerHTML (noms de station sous contrôle
+// admin mais principe du défense en profondeur).
+function escapeAttr(s){
+  return String(s==null?'':s).replace(/[&<>"']/g,function(c){
+    return c==='&'?'&amp;':c==='<'?'&lt;':c==='>'?'&gt;':c==='"'?'&quot;':'&#39;';
+  });
+}
+
+function renderStationsTable(){
+  var tb=document.getElementById('stationsTableBody');
+  if(!tb)return;
+  if(!_stationsCache.length){
+    tb.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:32px;">Aucun poste. Cliquez sur &laquo; Ajouter un poste &raquo; pour commencer.</td></tr>';
+    return;
+  }
+  tb.innerHTML=_stationsCache.map(function(s){
+    var activated=!!s.code_short;
+    var nameCell='<strong>'+escapeAttr(s.name)+'</strong>';
+    var codeCell=activated
+      ? '<span style="font-family:JetBrains Mono,monospace;font-size:13px;font-weight:600;">'+escapeAttr(s.code_short)+'</span>'
+      : '<span class="badge" style="background:#f1f5f9;color:var(--text3);">Non activ&eacute;</span>';
+    var activeCell=s.active
+      ? '<span class="badge" style="background:var(--green-light);color:var(--green);">&#10003; Actif</span>'
+      : '<span class="badge" style="background:#fef2f2;color:var(--red);">&#8856; Inactif</span>';
+    var stats30d='<span style="font-family:JetBrains Mono,monospace;font-size:13px;">'+(s.records_30d||0)+'</span>';
+    var actions;
+    if(activated){
+      var toggleIcon=s.active?'&#9208;&#65039;':'&#9654;&#65039;';
+      var toggleTitle=s.active?'Désactiver':'Réactiver';
+      actions=
+        '<button class="btn btn-outline btn-sm" data-action="print" data-id="'+s.id+'" title="Imprimer le QR">&#128438;</button> '+
+        '<button class="btn btn-outline btn-sm" data-action="toggle" data-id="'+s.id+'" title="'+toggleTitle+'">'+toggleIcon+'</button> '+
+        '<button class="btn btn-outline btn-sm" data-action="regen" data-id="'+s.id+'" title="Régénérer le token">&#128260;</button> '+
+        '<button class="btn btn-outline btn-sm" data-action="delete" data-id="'+s.id+'" style="color:var(--red);" title="Supprimer">&#128465;&#65039;</button>';
+    }else{
+      actions='<button class="btn btn-primary btn-sm" data-action="regen" data-id="'+s.id+'" title="Générer code+secret">&#128260; Activer</button>';
+    }
+    return '<tr><td>'+nameCell+'</td><td>'+codeCell+'</td><td>'+activeCell+'</td><td>'+stats30d+'</td><td style="text-align:right;white-space:nowrap;">'+actions+'</td></tr>';
+  }).join('');
+}
+
+async function handleStationAction(action,id){
+  var s=_stationsCache.find(function(x){return x.id===id;});
+  if(!s && action!=='print')return;
+  if(action==='print'){
+    try{
+      // GET /stations/:id/full — admin-only, logge station_secret_view en DB
+      var full=await apiGet('stations/'+id+'/full');
+      openStationPrintWindow({name:full.name,code_short:full.code_short,secret_token:full.secret_token});
+    }catch(e){toast('Erreur: '+e.message,'error');}
+    return;
+  }
+  if(action==='toggle'){
+    try{
+      await apiPut('stations/'+id,{active:!s.active});
+      await loadStations();
+      toast(s.active?'Poste désactivé':'Poste réactivé');
+    }catch(e){toast('Erreur: '+e.message,'error');}
+    return;
+  }
+  if(action==='regen'){
+    // confirm() — Warning sur l'invalidation de l'ancien QR si c'en est un.
+    // Pour un poste legacy (non activé), pas de warning.
+    var msg;
+    if(s.code_short){
+      msg='Régénérer le token de ce poste ?\n\nL’ancien QR affiché au dépôt ne fonctionnera plus et il faudra réimprimer.';
+    }else{
+      msg='Activer ce poste ?\n\nUn code de secours et un QR code vont être générés.';
+    }
+    if(!confirm(msg))return;
+    try{
+      var fresh=await apiPost('stations/'+id+'/regenerate-token',{});
+      await loadStations();
+      toast(s.code_short?'Token régénéré':'Poste activé');
+      // Ouvre directement l'impression avec le nouveau secret (en mémoire)
+      openStationPrintWindow({name:fresh.name,code_short:fresh.code_short,secret_token:fresh.secret_token});
+    }catch(e){toast('Erreur: '+e.message,'error');}
+    return;
+  }
+  if(action==='delete'){
+    if(!confirm('Supprimer ce poste ?\n\nIl sera désactivé (soft delete). Les anciens pointages associés restent tracés en historique.'))return;
+    try{
+      await apiDelete('stations/'+id);
+      await loadStations();
+      toast('Poste supprimé');
+    }catch(e){toast('Erreur: '+e.message,'error');}
+    return;
+  }
+}
+
+function openStationPrintWindow(st){
+  // st = { name, code_short, secret_token }
+  // URL absolue parce que la fenêtre print est ouverte sur about:blank (pas d'origine
+  // pour résoudre un chemin relatif). On prend l'origine du parent (localhost en dev,
+  // prod en prod) pour charger le bundle local /vendor/qrcode.min.js.
+  var qrScriptSrc=window.location.origin+'/vendor/qrcode.min.js';
+  // qrCode app URL : on embarque l'origine courante pour que le QR pointe sur le bon
+  // environnement (prod scan → prod, dev scan → dev).
+  var qrAppUrl=window.location.origin+'/?station_token='+encodeURIComponent(st.secret_token);
+  var w=window.open('','_blank');
+  if(!w){toast('Le pop-up a été bloqué par le navigateur','error');return;}
+  var nameEsc=escapeAttr(st.name||'');
+  var codeEsc=escapeAttr(st.code_short||'');
+  var qrAppUrlJson=JSON.stringify(qrAppUrl);
+  var qrScriptSrcEsc=escapeAttr(qrScriptSrc);
+  // Log minimal : surtout PAS le secret entier. Prefix 8 chars suffit pour audit.
+  try{console.log('[stations] print window opened for',codeEsc,'token_prefix=',(st.secret_token||'').substring(0,8)+'...');}catch(e){}
+  // Note : qrcodejs (davidshimjs) rend dans un <div> donné via `new QRCode(elem, opts)`.
+  // Il crée à l'intérieur un canvas OU une table selon le navigateur. On force
+  // width/height à 600px (haute résolution pour print ~300 DPI à 70mm) et on scale
+  // via CSS (canvas tag → width:70mm).
+  var html=
+    '<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">'+
+    '<title>QR &mdash; '+nameEsc+'</title>'+
+    '<style>'+
+    '@page{size:A4;margin:15mm}'+
+    '@media print{.no-print{display:none !important}}'+
+    'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;text-align:center;padding:20mm 10mm;margin:0;color:#1a1a1a}'+
+    'h1{font-size:28pt;font-weight:700;letter-spacing:0.03em;margin:0 auto 20mm auto;word-wrap:break-word;max-width:180mm;text-transform:uppercase;line-height:1.2}'+
+    '#qr{margin:0 auto 8mm auto;display:inline-block;width:70mm;height:70mm}'+
+    '#qr canvas,#qr img{width:70mm !important;height:70mm !important;display:block}'+
+    '.code{font-family:"JetBrains Mono","SF Mono",Menlo,Consolas,monospace;font-size:48pt;font-weight:700;margin:18mm 0 6mm 0;letter-spacing:0.05em}'+
+    '.instr{font-size:11pt;font-style:italic;color:#666;max-width:120mm;margin:0 auto;line-height:1.4}'+
+    '.actions{margin-top:18mm}'+
+    '.actions button{padding:10px 20px;margin:0 6px;font-size:13pt;cursor:pointer;border:1px solid #333;background:#fff;border-radius:6px}'+
+    '.actions button:hover{background:#f0f0f0}'+
+    '</style>'+
+    '<scr'+'ipt src="'+qrScriptSrcEsc+'"></scr'+'ipt>'+
+    '</head><body>'+
+    '<h1>'+nameEsc+'</h1>'+
+    '<div id="qr"></div>'+
+    '<div class="code">'+codeEsc+'</div>'+
+    '<p class="instr">Si la cam&eacute;ra ne fonctionne pas, saisis ce code sur le site.</p>'+
+    '<div class="actions no-print"><button onclick="window.print()">Imprimer</button> <button onclick="window.close()">Fermer</button></div>'+
+    '<scr'+'ipt>'+
+    'if(typeof QRCode==="undefined"){'+
+    'document.getElementById("qr").innerHTML="<p style=\\"color:red\\">Erreur : librairie QR non chargée. Vérifie /vendor/qrcode.min.js</p>";'+
+    '}else{'+
+    'new QRCode(document.getElementById("qr"),{text:'+qrAppUrlJson+',width:600,height:600,correctLevel:QRCode.CorrectLevel.H});'+
+    '}'+
+    '</scr'+'ipt>'+
+    '</body></html>';
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+}
+
+function openStationAddModal(){
+  document.getElementById('newStationName').value='';
+  document.getElementById('stationAddModal').classList.add('open');
+  setTimeout(function(){var i=document.getElementById('newStationName');if(i)i.focus();},50);
+}
+function closeStationAddModal(){
+  document.getElementById('stationAddModal').classList.remove('open');
+}
+async function submitStationAdd(){
+  var name=(document.getElementById('newStationName').value||'').trim();
+  if(!name){toast('Nom requis','error');return;}
+  try{
+    // apiPost parse le JSON retourné — contient id, name, code_short, secret_token, active, created_at
+    var created=await apiPost('stations',{name:name});
+    closeStationAddModal();
+    await loadStations();
+    toast('Poste créé');
+    // Imprime tout de suite avec le secret frais en mémoire
+    openStationPrintWindow({name:created.name,code_short:created.code_short,secret_token:created.secret_token});
+  }catch(e){toast('Erreur: '+e.message,'error');}
+}
+
+// Event delegation sur tbody + click-overlay-to-close. Wrapper DOMContentLoaded
+// car les éléments HTML sont plus bas dans le document que ce script (piège Phase 3).
+document.addEventListener('DOMContentLoaded',function(){
+  var tbody=document.getElementById('stationsTableBody');
+  if(tbody){
+    tbody.addEventListener('click',function(e){
+      var btn=e.target.closest('button[data-action]');
+      if(!btn)return;
+      var action=btn.getAttribute('data-action');
+      var id=parseInt(btn.getAttribute('data-id'),10);
+      if(!action||!id||isNaN(id))return;
+      handleStationAction(action,id);
+    });
+  }
+  var saModal=document.getElementById('stationAddModal');
+  if(saModal){
+    saModal.addEventListener('click',function(e){if(e.target===saModal)closeStationAddModal();});
+  }
+  var nameInput=document.getElementById('newStationName');
+  if(nameInput){
+    nameInput.addEventListener('keydown',function(e){if(e.key==='Enter')submitStationAdd();});
+  }
+});
+
 // ═══ STARTUP ═══
 (async function startup(){
   // If the cached token is expired (or within 60s), force re-login before any API call
@@ -2149,6 +2368,24 @@ document.addEventListener('DOMContentLoaded',function(){
 </div>
 <div class="modal-footer">
 <button class="btn btn-outline" onclick="closeRhModal()">Fermer</button>
+</div>
+</div>
+</div>
+
+<!-- ═══ Stations : modale d'ajout ═══ -->
+<div class="modal-overlay" id="stationAddModal">
+<div class="modal">
+<div class="modal-header">Ajouter un poste de pointage</div>
+<div class="modal-body">
+<div class="form-group">
+<label class="form-label">Nom du poste</label>
+<input type="text" class="form-control" id="newStationName" placeholder="ex: Toulouse &mdash; Entr&eacute;e Salari&eacute;s">
+<div style="font-size:11px;color:var(--text3);margin-top:6px;">Un code de secours et un QR code seront g&eacute;n&eacute;r&eacute;s automatiquement.</div>
+</div>
+</div>
+<div class="modal-footer">
+<button class="btn btn-outline" onclick="closeStationAddModal()">Annuler</button>
+<button class="btn btn-primary" onclick="submitStationAdd()">Cr&eacute;er et imprimer</button>
 </div>
 </div>
 </div>
