@@ -1,4 +1,5 @@
 var crypto = require("crypto");
+var bcrypt = require("bcryptjs");
 
 var H = {
   "Content-Type": "application/json",
@@ -117,6 +118,87 @@ async function insertStationUnique(name) {
   var err = new Error("STATION_CODE_COLLISION_SATURATION");
   err.status = 500;
   throw err;
+}
+
+// ─── Phase 5 — PIN workers : helpers ────────────────────────────────────
+
+// Vérifie un station_token : renvoie {id} si valide ET active=true, null sinon.
+// Utilisé par pin/status, pin/create, pin/verify (proof-of-presence physique).
+async function verifyStationToken(token) {
+  if (!token || typeof token !== "string") return null;
+  var row = await sql1("SELECT id FROM postes WHERE secret_token=$1 AND active=true", [token.trim()]);
+  return row || null;
+}
+
+// Délai constant-time pour pin/verify : attend au moins minMs depuis startTime.
+// Pas d'await gratuit si déjà écoulé (pas de piège async, setTimeout seulement
+// si wait > 0).
+function respondAfterDelay(startTime, minMs) {
+  var elapsed = Date.now() - startTime;
+  var wait = minMs - elapsed;
+  if (wait <= 0) return Promise.resolve();
+  return new Promise(function (r) { setTimeout(r, wait); });
+}
+
+// Version "sûre" d'un worker pour les réponses de session (pas de fuite
+// pin_hash, pin_attempts, pin_locked).
+function safeWorker(w) {
+  return {
+    id: w.id,
+    name: w.name,
+    type: w.type,
+    agency: w.agency || "",
+    sched_in: w.sched_in,
+    sched_out: w.sched_out,
+    last_clock_state: w.last_clock_state || "idle"
+  };
+}
+
+// Logic principale de pin/verify, extrait dans une fonction pour pouvoir
+// envelopper l'appel du dispatcher dans un Date.now() + respondAfterDelay.
+// Retourne :
+//   - { ok: true, token, expires_at, worker } si succès
+//   - null sinon (toutes les erreurs — binary response)
+// Les effets de bord (increment attempts, set locked, logSecurityEvent) se
+// font ici avant le return. Le timing-floor se fait APRÈS cette fonction,
+// côté dispatcher, pour couvrir tous les chemins.
+async function handlePinVerifyInner(event, body, seg) {
+  var workerId = parseInt(seg[1]);
+  if (!workerId || workerId <= 0) return null;
+  var pin = body && body.pin;
+  if (!pin || !/^\d{6}$/.test(String(pin))) return null;
+  var station = await verifyStationToken(body && body.station_token);
+  if (!station) return null;
+  var worker = await sql1("SELECT * FROM workers WHERE id=$1", [workerId]);
+  if (!worker) return null;
+  if (!worker.pin_hash) return null;
+  if (worker.pin_locked) {
+    await logSecurityEvent("pin_fail", worker.id, station.id, { reason: "attempted_on_locked" });
+    return null;
+  }
+  var match = false;
+  try { match = await bcrypt.compare(String(pin), worker.pin_hash); } catch (e) { match = false; }
+  if (match) {
+    await sql("UPDATE workers SET pin_attempts=0 WHERE id=$1", [worker.id]);
+    var sess = await issueSession("worker", worker.id, 16);
+    return { ok: true, token: sess.token, expires_at: sess.expires_at, worker: safeWorker(worker) };
+  }
+  // Fail path — atomic increment with auto-lock à 3
+  // LEAST(..., 3) plafonne, pin_locked passe true à 3ème fail.
+  // WHERE pin_locked=false empêche un déjà-locked de monter encore (ceinture+bretelles).
+  var updated = await sql1(
+    "UPDATE workers SET pin_attempts = LEAST(pin_attempts + 1, 3), " +
+    "pin_locked = CASE WHEN pin_attempts + 1 >= 3 THEN true ELSE false END " +
+    "WHERE id=$1 AND pin_locked=false " +
+    "RETURNING pin_attempts, pin_locked",
+    [worker.id]
+  );
+  var attempts = updated ? updated.pin_attempts : worker.pin_attempts;
+  await logSecurityEvent("pin_fail", worker.id, station.id, { attempts: attempts });
+  if (updated && updated.pin_locked) {
+    await logSecurityEvent("pin_lock", worker.id, station.id, { attempts: 3 });
+  }
+  return null;
 }
 
 // In-process rate limiter (Map keyed by IP). Intentionally NOT persisted to DB:
@@ -325,6 +407,84 @@ exports.handler = async function (event) {
       if (!stationRow) return err("Station inconnue", 404);
       if (!stationRow.active) return err("Station désactivée", 403);
       return json({ ok: true, station: { id: stationRow.id, name: stationRow.name } });
+    }
+
+    // ═══ Phase 5 — PIN workers ═══
+
+    // GET /api/workers/:id/pin/status [public+station] — renvoie {has_pin, locked}
+    // pour que le front sache s'il faut proposer "créer PIN" ou "saisir PIN".
+    // station_token passé en header X-Station-Token (pas en query pour éviter
+    // logs/CDN/history qui pourraient fuiter le secret).
+    if (method === "GET" && seg[0] === "workers" && seg[1] && seg[2] === "pin" && seg[3] === "status") {
+      if (!checkRateLimit(event, 10)) return json({ error: "Too many requests" }, 429);
+      var hdrs = event.headers || {};
+      var pinStatusStation = await verifyStationToken(hdrs["x-station-token"] || hdrs["X-Station-Token"]);
+      if (!pinStatusStation) return err("Station invalide", 401);
+      var pinStatusWorker = await sql1("SELECT pin_hash, pin_locked FROM workers WHERE id=$1", [parseInt(seg[1])]);
+      if (!pinStatusWorker) return err("Worker introuvable", 404);
+      return json({ has_pin: !!pinStatusWorker.pin_hash, locked: !!pinStatusWorker.pin_locked });
+    }
+
+    // POST /api/workers/:id/pin/create [public+station, 5/min] — crée le PIN
+    // du worker SSI pin_hash IS NULL. UPDATE atomique (WHERE pin_hash IS NULL).
+    // Sur succès : log pin_create + issue session worker 16h.
+    if (method === "POST" && seg[0] === "workers" && seg[1] && seg[2] === "pin" && seg[3] === "create") {
+      if (!checkRateLimit(event, 5)) return json({ error: "Too many requests" }, 429);
+      var pcWorkerId = parseInt(seg[1]);
+      if (!pcWorkerId || pcWorkerId <= 0) return err("id invalide", 400);
+      var newPin = body && body.pin;
+      if (!newPin || !/^\d{6}$/.test(String(newPin))) return err("PIN invalide (6 chiffres requis)", 400);
+      var pcStation = await verifyStationToken(body && body.station_token);
+      if (!pcStation) return err("Station invalide", 401);
+      var pcExisting = await sql1("SELECT id, pin_hash FROM workers WHERE id=$1", [pcWorkerId]);
+      if (!pcExisting) return err("Worker introuvable", 404);
+      if (pcExisting.pin_hash) return err("Configuration PIN déjà effectuée", 409);
+      var pcHash = await bcrypt.hash(String(newPin), 10);
+      // UPDATE atomique avec garde WHERE pin_hash IS NULL (race-condition-safe)
+      var pcUpdated = await sql1(
+        "UPDATE workers SET pin_hash=$1, pin_attempts=0, pin_locked=false " +
+        "WHERE id=$2 AND pin_hash IS NULL " +
+        "RETURNING id, name, type, agency, sched_in, sched_out, last_clock_state",
+        [pcHash, pcWorkerId]
+      );
+      if (!pcUpdated) return err("Configuration PIN déjà effectuée", 409);
+      await logSecurityEvent("pin_create", pcWorkerId, pcStation.id, { first_time: true });
+      var pcSess = await issueSession("worker", pcWorkerId, 16);
+      return json({
+        ok: true,
+        token: pcSess.token,
+        expires_at: pcSess.expires_at,
+        worker: safeWorker(pcUpdated)
+      }, 201);
+    }
+
+    // POST /api/workers/:id/pin/verify [public+station, 5/min] — constant-time 200ms
+    // Réponse binary : 200 {token,...} ou 401 {error:"PIN incorrect"}. Tout chemin
+    // d'échec passe par handlePinVerifyInner qui log + maj état, puis délai ici.
+    if (method === "POST" && seg[0] === "workers" && seg[1] && seg[2] === "pin" && seg[3] === "verify") {
+      if (!checkRateLimit(event, 5)) return json({ error: "Too many requests" }, 429);
+      var pvStart = Date.now();
+      var pvResult = await handlePinVerifyInner(event, body, seg);
+      await respondAfterDelay(pvStart, 200);
+      if (pvResult && pvResult.ok) return json(pvResult, 200);
+      return json({ error: "PIN incorrect" }, 401);
+    }
+
+    // POST /api/workers/:id/pin/reset [admin] — wipe pin_hash + attempts + lock
+    // Après reset, le prochain pointage du worker va passer par pin/create.
+    if (method === "POST" && seg[0] === "workers" && seg[1] && seg[2] === "pin" && seg[3] === "reset") {
+      var resetAuth = await requireAuth(event, "admin");
+      var prWorkerId = parseInt(seg[1]);
+      var prUpdated = await sql1(
+        "UPDATE workers SET pin_hash=NULL, pin_attempts=0, pin_locked=false WHERE id=$1 RETURNING id",
+        [prWorkerId]
+      );
+      if (!prUpdated) return err("Worker introuvable", 404);
+      await logSecurityEvent("pin_reset", prWorkerId, null, {
+        triggered_by: "admin",
+        admin_worker_id: resetAuth.worker_id
+      });
+      return json({ ok: true });
     }
 
     if (method === "GET" && path === "qr-secret") {
