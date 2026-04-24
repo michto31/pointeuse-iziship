@@ -234,6 +234,18 @@ tr:hover td{background:#FAFBFD}
 .seg-control button:not(.active):hover{color:#111827}
 .punch-filters{display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:16px}
 .worker-empty{grid-column:1/-1;text-align:center;padding:40px 20px;color:var(--text3);font-size:14px}
+
+/* ═══ Journal security events — badges par type ═══ */
+.se-badge{display:inline-block;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:600;white-space:nowrap;font-family:JetBrains Mono,monospace}
+.se-badge-pin_fail{background:#fef3c7;color:#92400e}
+.se-badge-pin_lock{background:#fee2e2;color:#991b1b}
+.se-badge-pin_create{background:#d1fae5;color:#065f46}
+.se-badge-pin_reset{background:#dbeafe;color:#1e40af}
+.se-badge-station_regen{background:#ede9fe;color:#5b21b6}
+.se-badge-station_secret_view{background:#f3f4f6;color:#374151}
+.se-details{font-family:JetBrains Mono,monospace;font-size:11px;color:var(--text3);max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.se-timestamp{font-family:JetBrains Mono,monospace;font-size:12px;color:var(--text2)}
+.se-null{color:var(--text3);font-style:italic}
 .punch-loading{text-align:center;color:var(--text3);padding:40px;font-size:14px;grid-column:1 / -1}
 
 .punch-b-inner,.punch-c-inner,.punch-d-inner,.punch-e-inner{max-width:520px;margin:0 auto;width:100%;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px}
@@ -495,6 +507,7 @@ Changer d&#39;utilisateur
 <nav class="sidebar-nav">
 <button class="nav-item" onclick="openAddModal()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>Ajouter salari&#233;</button>
 <button class="nav-item" data-page="stations"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>Postes de pointage</button>
+<button class="nav-item" data-page="security-events"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>Journal s&#233;curit&#233;</button>
 </nav>
 <div class="sidebar-footer"><div class="sidebar-avatar">DA</div><div><div class="sidebar-user">David</div><div class="sidebar-role">Administrateur</div></div><button class="emp-logout" onclick="logout()" style="margin-left:auto;font-size:11px;">D&#233;co</button></div>
 </aside>
@@ -684,6 +697,27 @@ Bonjour ! Je suis votre assistant RH. Je peux analyser vos donn&#233;es de point
 <button class="btn btn-primary" onclick="openStationAddModal()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Ajouter un poste</button>
 </div>
 <div class="card"><div class="table-wrap"><table><thead><tr><th>Nom</th><th>Code</th><th>Actif</th><th>Pointages 30j</th><th style="text-align:right;">Actions</th></tr></thead><tbody id="stationsTableBody"><tr><td colspan="5" style="text-align:center;color:var(--text3);padding:32px;">Chargement...</td></tr></tbody></table></div></div>
+</div>
+
+<!-- JOURNAL SECURITY EVENTS -->
+<div class="page" id="page-security-events">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+<div>
+<h2 style="margin:0;font-size:18px;color:var(--text);">Journal des &eacute;v&eacute;nements</h2>
+<p style="margin:4px 0 0;font-size:13px;color:var(--text3);">Audit des actions sensibles (PIN, r&eacute;g&eacute;n&eacute;ration secret, consultations de secret).</p>
+</div>
+<button class="btn btn-outline" id="seRefreshBtn" type="button"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>Rafra&icirc;chir</button>
+</div>
+<div class="card" style="margin-bottom:12px;"><div class="card-body" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;">
+<select class="form-control" id="seFilterType"><option value="">Tous les types</option><option value="pin_fail">PIN &eacute;chec</option><option value="pin_lock">PIN verrouill&eacute;</option><option value="pin_create">PIN cr&eacute;&eacute;</option><option value="pin_reset">PIN r&eacute;initialis&eacute;</option><option value="station_regen">Station regen</option><option value="station_secret_view">Secret consult&eacute;</option></select>
+<select class="form-control" id="seFilterWorker"><option value="">Tous les salari&eacute;s</option></select>
+<select class="form-control" id="seFilterStation"><option value="">Toutes les stations</option></select>
+<input type="date" class="form-control" id="seFilterFrom" placeholder="Du">
+<input type="date" class="form-control" id="seFilterTo" placeholder="Au">
+</div></div>
+<div class="card"><div class="table-wrap"><table><thead><tr><th style="width:160px;">Date/Heure</th><th style="width:140px;">Type</th><th>Salari&eacute;</th><th>Station</th><th>D&eacute;tails</th></tr></thead><tbody id="securityEventsBody"><tr><td colspan="5" style="text-align:center;color:var(--text3);padding:32px;">Chargement...</td></tr></tbody></table></div>
+<div id="securityEventsLoadMore" style="text-align:center;padding:16px;border-top:1px solid var(--border-light);display:none;"><button class="btn btn-outline" id="seLoadMoreBtn" type="button">Charger 50 de plus</button></div>
+</div>
 </div>
 
 </div></div>
@@ -1109,7 +1143,7 @@ async function apiDelete(path){return apiFetch(path,{method:'DELETE'});}
 // Sync to/from server
 async function syncWorkers(){
   try{_workersCache=await apiGet('workers');
-  _workersCache=_workersCache.map(function(w){return{id:w.id,name:w.name,agency:w.agency,type:w.type,phone:w.phone,badge:w.badge,schedIn:w.sched_in||w.schedIn||'08:00',schedOut:w.sched_out||w.schedOut||'16:00',location:w.location||'toulouse'};});
+  _workersCache=_workersCache.map(function(w){return{id:w.id,name:w.name,agency:w.agency,type:w.type,phone:w.phone,badge:w.badge,schedIn:w.sched_in||w.schedIn||'08:00',schedOut:w.sched_out||w.schedOut||'16:00',location:w.location||'toulouse',has_pin:!!w.has_pin,pin_locked:!!w.pin_locked};});
   }catch(e){console.error('syncWorkers error:',e);}
 }
 async function syncRecords(date,from,to){
@@ -1210,6 +1244,7 @@ document.querySelectorAll('.nav-item[data-page]').forEach(function(b){
     if(b.dataset.page==='rapport')renderRapport();
     if(b.dataset.page==='historique')renderHistorique();
     if(b.dataset.page==='stations')loadStations();
+    if(b.dataset.page==='security-events')enterSecurityEventsPage();
     if(b.dataset.page!=='scanner')stopCamera();
     document.getElementById('sidebar').classList.remove('open');
   });
@@ -1248,8 +1283,25 @@ async function addWorker(){
 }
 async function deleteWorker(id){if(!confirm('Supprimer ce salari\u00e9 ?'))return;try{await apiDeleteWorker(id);refreshSel();renderWorkersTable();toast('Salari\u00e9 supprim\u00e9');}catch(e){toast('Erreur: '+e.message,'error');}}
 
+async function resetWorkerPin(id){
+  var wid=parseInt(id,10);
+  if(isNaN(wid))return;
+  if(!confirm('R\u00e9initialiser le PIN de ce salari\u00e9 ?\n\nLe prochain pointage lui demandera de cr\u00e9er un nouveau PIN.'))return;
+  try{
+    await apiPost('workers/'+wid+'/pin/reset',{});
+    toast('PIN r\u00e9initialis\u00e9');
+    await syncWorkers();
+    renderWorkersTable();
+    closeEditWorker();
+    // Re-ouvre la modale edit (bouton reset disparait puisque has_pin devient false)
+    setTimeout(function(){editWorker(wid);},120);
+  }catch(e){toast('Erreur: '+e.message,'error');}
+}
+
 function editWorker(id){
-  var w=lW().find(function(x){return x.id===id;});if(!w)return;
+  id=parseInt(id,10);
+  var w=lW().find(function(x){return x.id===id;});
+  if(!w)return;
   var modal=document.getElementById('addModal').querySelector('.modal');
   modal.innerHTML='<div class="modal-header">Modifier '+w.name+'</div><div class="modal-body">'+
     '<div class="form-group"><label class="form-label">Nom complet</label><input type="text" class="form-control" id="editWName" value="'+w.name+'"></div>'+
@@ -1262,6 +1314,7 @@ function editWorker(id){
     '<div class="form-group"><label class="form-label">Arriv\u00e9e th\u00e9orique</label><input type="time" class="form-control" id="editWSchedIn" value="'+(w.schedIn||'08:00')+'"></div>'+
     '<div class="form-group"><label class="form-label">D\u00e9part th\u00e9orique</label><input type="time" class="form-control" id="editWSchedOut" value="'+(w.schedOut||'16:00')+'"></div>'+
     '</div></div>'+
+    (w.has_pin?'<div style="padding:12px 20px 0;"><button class="btn btn-outline" type="button" onclick="resetWorkerPin('+parseInt(id,10)+')" style="color:var(--red);border-color:var(--red);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> R\u00e9initialiser le PIN'+(w.pin_locked?' (verrouill\u00e9)':'')+'</button></div>':'')+
     '<div class="modal-footer"><button class="btn btn-outline" onclick="closeEditWorker()">Annuler</button><button class="btn btn-primary" onclick="saveEditWorker(\''+id+'\')">Enregistrer</button></div>';
   document.getElementById('addModal').classList.add('open');
 }
@@ -1954,6 +2007,154 @@ document.querySelectorAll('.nav-item[data-page]').forEach(function(b){
     }
   });
 });
+
+// ═══ SECURITY EVENTS admin page (Phase 5 step 7) ═══
+var _seEvents=[];
+var _seLimit=50;
+var _seOffset=0;
+var _seHasMore=false;
+var SE_TYPE_LABELS={
+  pin_fail:'PIN \u00e9chec',
+  pin_lock:'PIN verrouill\u00e9',
+  pin_create:'PIN cr\u00e9\u00e9',
+  pin_reset:'PIN reset',
+  station_regen:'Station regen',
+  station_secret_view:'Secret consult\u00e9'
+};
+
+function seFormatTimestamp(iso){
+  if(!iso)return '';
+  try{
+    var d=new Date(iso);
+    if(isNaN(d.getTime()))return iso;
+    return d.toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  }catch(e){return iso;}
+}
+function seRenderDetails(details){
+  if(!details)return '<span class="se-null">—</span>';
+  var obj=details;
+  if(typeof details==='string'){try{obj=JSON.parse(details);}catch(e){return punchEscape(details);}}
+  if(!obj || typeof obj!=='object' || Object.keys(obj).length===0)return '<span class="se-null">—</span>';
+  // Rendu compact key=value séparé par |
+  var parts=Object.keys(obj).map(function(k){
+    var v=obj[k];
+    if(v===null)v='null';
+    else if(typeof v==='object')v=JSON.stringify(v);
+    return punchEscape(k)+'='+punchEscape(String(v));
+  });
+  return '<span class="se-details" title="'+punchEscape(JSON.stringify(obj))+'">'+parts.join(' | ')+'</span>';
+}
+
+function seBuildQuery(reset){
+  var t=document.getElementById('seFilterType');
+  var w=document.getElementById('seFilterWorker');
+  var s=document.getElementById('seFilterStation');
+  var f=document.getElementById('seFilterFrom');
+  var to=document.getElementById('seFilterTo');
+  var params=[];
+  if(t && t.value)params.push('type='+encodeURIComponent(t.value));
+  if(w && w.value)params.push('worker_id='+encodeURIComponent(w.value));
+  if(s && s.value)params.push('station_id='+encodeURIComponent(s.value));
+  if(f && f.value)params.push('from='+encodeURIComponent(f.value));
+  if(to && to.value)params.push('to='+encodeURIComponent(to.value));
+  var offset=reset?0:_seOffset;
+  params.push('limit='+_seLimit);
+  params.push('offset='+offset);
+  return 'security-events?'+params.join('&');
+}
+
+async function loadSecurityEvents(reset){
+  var body=document.getElementById('securityEventsBody');
+  var moreBox=document.getElementById('securityEventsLoadMore');
+  if(reset){
+    _seOffset=0;
+    _seEvents=[];
+    if(body)body.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:32px;">Chargement…</td></tr>';
+  }
+  try{
+    var d=await apiGet(seBuildQuery(reset));
+    var events=(d && d.events)||[];
+    if(reset)_seEvents=events;
+    else _seEvents=_seEvents.concat(events);
+    _seHasMore=events.length===_seLimit;
+    _seOffset=(d && typeof d.offset==='number'?d.offset:_seOffset)+events.length;
+    seRenderTable();
+    if(moreBox)moreBox.style.display=_seHasMore?'block':'none';
+  }catch(e){
+    if(body)body.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--red);padding:24px;">Erreur : '+punchEscape(e.message)+'</td></tr>';
+    if(moreBox)moreBox.style.display='none';
+  }
+}
+
+function seRenderTable(){
+  var body=document.getElementById('securityEventsBody');
+  if(!body)return;
+  if(!_seEvents.length){
+    body.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:32px;">Aucun &eacute;v&eacute;nement</td></tr>';
+    return;
+  }
+  body.innerHTML=_seEvents.map(function(ev){
+    var type=ev.event_type||'';
+    var label=SE_TYPE_LABELS[type]||type;
+    var badge='<span class="se-badge se-badge-'+punchEscape(type)+'">'+punchEscape(label)+'</span>';
+    var ts='<span class="se-timestamp">'+punchEscape(seFormatTimestamp(ev.created_at))+'</span>';
+    var worker=ev.worker_name?punchEscape(ev.worker_name):'<span class="se-null">—</span>';
+    var station=ev.station_name?punchEscape(ev.station_name):'<span class="se-null">—</span>';
+    var details=seRenderDetails(ev.details);
+    return '<tr><td>'+ts+'</td><td>'+badge+'</td><td>'+worker+'</td><td>'+station+'</td><td>'+details+'</td></tr>';
+  }).join('');
+}
+
+async function populateSecurityFilters(){
+  // Workers
+  var sw=document.getElementById('seFilterWorker');
+  if(sw && sw.options.length<=1){
+    try{
+      var workers=await apiGet('workers');
+      workers.sort(function(a,b){return (a.name||'').localeCompare(b.name||'');});
+      workers.forEach(function(w){
+        var opt=document.createElement('option');
+        opt.value=w.id;
+        opt.textContent=w.name;
+        sw.appendChild(opt);
+      });
+    }catch(e){console.error('[se] populate workers:',e.message);}
+  }
+  // Stations (postes avec code_short défini = stations Phase 5, ou tous les postes)
+  var ss=document.getElementById('seFilterStation');
+  if(ss && ss.options.length<=1){
+    try{
+      var stations=await apiGet('stations');
+      stations.sort(function(a,b){return (a.name||'').localeCompare(b.name||'');});
+      stations.forEach(function(s){
+        var opt=document.createElement('option');
+        opt.value=s.id;
+        opt.textContent=s.name;
+        ss.appendChild(opt);
+      });
+    }catch(e){console.error('[se] populate stations:',e.message);}
+  }
+}
+
+async function enterSecurityEventsPage(){
+  await populateSecurityFilters();
+  loadSecurityEvents(true);
+}
+
+// Event listeners pour la page security-events. Si le script est parsé après
+// DOMContentLoaded (import inline dans body), on bind immédiatement.
+function seBindListeners(){
+  var refresh=document.getElementById('seRefreshBtn');
+  if(refresh)refresh.addEventListener('click',function(){loadSecurityEvents(true);});
+  var more=document.getElementById('seLoadMoreBtn');
+  if(more)more.addEventListener('click',function(){loadSecurityEvents(false);});
+  ['seFilterType','seFilterWorker','seFilterStation','seFilterFrom','seFilterTo'].forEach(function(id){
+    var el=document.getElementById(id);
+    if(el)el.addEventListener('change',function(){loadSecurityEvents(true);});
+  });
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',seBindListeners);
+else seBindListeners();
 
 // ═══ PUNCH SCREEN — flow salarié (Phase 5 step 6) ═══
 
@@ -2869,7 +3070,7 @@ async function submitStationAdd(){
     var created=await apiPost('stations',{name:name});
     closeStationAddModal();
     await loadStations();
-    toast('Poste créé');
+    toast('Poste cr\u00e9\u00e9');
     // Imprime tout de suite avec le secret frais en mémoire
     openStationPrintWindow({name:created.name,code_short:created.code_short,secret_token:created.secret_token});
   }catch(e){toast('Erreur: '+e.message,'error');}

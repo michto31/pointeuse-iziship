@@ -356,7 +356,7 @@ exports.handler = async function (event) {
     if (method === "POST" && path === "agent/feedback") { await requireAuth(event, "admin"); await sql("UPDATE agent_memory SET feedback=$1 WHERE id=$2", [body.feedback, body.id]); return json({ ok: true }); }
     if (method === "GET" && path === "agent/runs") { await requireAuth(event, "admin"); return json(await sql("SELECT * FROM agent_runs ORDER BY run_date DESC LIMIT 20")); }
 
-    if (method === "GET" && path === "workers") { await requireAuth(event, "admin"); return json(await sql("SELECT * FROM workers ORDER BY type, name")); }
+    if (method === "GET" && path === "workers") { await requireAuth(event, "admin"); return json(await sql("SELECT id, name, agency, type, phone, badge, sched_in, sched_out, location, pin_attempts, pin_locked, last_clock_state, (pin_hash IS NOT NULL) AS has_pin, created_at, updated_at FROM workers ORDER BY type, name")); }
     if (method === "POST" && path === "workers") {
       await requireAuth(event, "admin");
       if (!body.name) return err("Nom requis");
@@ -742,6 +742,43 @@ exports.handler = async function (event) {
       });
     }
 
+    // GET /api/security-events [admin] — journal audit PIN + stations.
+    // Query params (tous optionnels) : type, worker_id, station_id, from, to, limit, offset.
+    // LEFT JOIN workers + postes pour inclure worker_name et station_name dans
+    // la réponse (évite N+1 lookups côté front). NULL reste NULL (event sans
+    // worker ou station), géré côté UI.
+    if (method === "GET" && path === "security-events") {
+      await requireAuth(event, "admin");
+      var seWhere = ["1=1"];
+      var seParams = [];
+      var sePi = 1;
+      if (qs.type) { seWhere.push("se.event_type = $" + sePi++); seParams.push(qs.type); }
+      if (qs.worker_id) { seWhere.push("se.worker_id = $" + sePi++); seParams.push(parseInt(qs.worker_id)); }
+      if (qs.station_id) { seWhere.push("se.station_id = $" + sePi++); seParams.push(parseInt(qs.station_id)); }
+      if (qs.from) { seWhere.push("se.created_at >= $" + sePi++); seParams.push(qs.from); }
+      if (qs.to) { seWhere.push("se.created_at < ($" + sePi++ + "::date + INTERVAL '1 day')"); seParams.push(qs.to); }
+      var seLimit = Math.min(500, parseInt(qs.limit || "50"));
+      var seOffset = parseInt(qs.offset || "0");
+      if (isNaN(seLimit) || seLimit < 1) seLimit = 50;
+      if (isNaN(seOffset) || seOffset < 0) seOffset = 0;
+      seParams.push(seLimit);
+      var seLimitIdx = sePi++;
+      seParams.push(seOffset);
+      var seOffsetIdx = sePi;
+      var seRows = await sql(
+        "SELECT se.id, se.event_type, se.worker_id, se.station_id, se.details, se.created_at, " +
+        "w.name AS worker_name, p.name AS station_name " +
+        "FROM security_events se " +
+        "LEFT JOIN workers w ON w.id = se.worker_id " +
+        "LEFT JOIN postes p ON p.id = se.station_id " +
+        "WHERE " + seWhere.join(" AND ") +
+        " ORDER BY se.created_at DESC " +
+        "LIMIT $" + seLimitIdx + " OFFSET $" + seOffsetIdx,
+        seParams
+      );
+      return json({ events: seRows, limit: seLimit, offset: seOffset });
+    }
+
     // POST /api/workers/:id/pin/reset [admin] — wipe pin_hash + attempts + lock
     // Après reset, le prochain pointage du worker va passer par pin/create.
     if (method === "POST" && seg[0] === "workers" && seg[1] && seg[2] === "pin" && seg[3] === "reset") {
@@ -754,7 +791,8 @@ exports.handler = async function (event) {
       if (!prUpdated) return err("Worker introuvable", 404);
       await logSecurityEvent("pin_reset", prWorkerId, null, {
         triggered_by: "admin",
-        admin_worker_id: resetAuth.worker_id
+        admin_worker_id: resetAuth.worker_id,
+        source: "admin_ui"
       });
       return json({ ok: true });
     }
