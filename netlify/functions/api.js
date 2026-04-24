@@ -347,7 +347,7 @@ exports.handler = async function (event) {
     // TODO: filtrer sur actif=true si/quand la colonne arrive sur workers.
     if (method === "GET" && path === "public/worker-names") {
       if (!checkRateLimit(event, 20)) return json({ error: "Too many requests" }, 429);
-      return json(await sql("SELECT id, name, type, location FROM workers ORDER BY name"));
+      return json(await sql("SELECT id, name, type, location, agency FROM workers ORDER BY name"));
     }
 
     if (method === "POST" && path === "assistant") { await requireAuth(event, "admin"); return await handleAssistant(body); }

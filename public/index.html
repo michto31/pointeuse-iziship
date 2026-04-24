@@ -340,6 +340,7 @@ Changer d&#39;utilisateur
 <button type="button" data-filter-contract="salarie" class="active">Salari&eacute;s</button>
 <button type="button" data-filter-contract="interimaire">Int&eacute;rimaires</button>
 </div>
+<div class="seg-control" id="agencyFilter" hidden></div>
 </div>
 <div class="worker-grid" id="workerGrid"><div class="punch-loading">Chargement&hellip;</div></div>
 <div class="punch-a-footer">
@@ -2293,7 +2294,7 @@ function loadPunchFilter(){
     var s=JSON.parse(localStorage.getItem(PUNCH_FILTER_KEY));
     if(s && typeof s==='object')return s;
   }catch(e){}
-  return {location:null,contract:'salarie'};
+  return {location:null,contract:'salarie',agency:null};
 }
 function savePunchFilter(f){
   try{localStorage.setItem(PUNCH_FILTER_KEY,JSON.stringify(f));}catch(e){}
@@ -2317,6 +2318,11 @@ async function renderWorkerGrid(){
     workers.forEach(function(w){var l=w.location||'toulouse';if(locs.indexOf(l)<0)locs.push(l);});
     locs.sort();
     renderLocationFilter(locs);
+    // Liste distincte des agences (workers intérim avec agency non-vide)
+    var ags=[];
+    workers.forEach(function(w){var a=(w.agency||'').trim();if(a && ags.indexOf(a)<0)ags.push(a);});
+    ags.sort(function(a,b){return a.toLowerCase().localeCompare(b.toLowerCase());});
+    renderAgencyFilter(ags);
     renderFilteredGrid();
   }catch(e){
     grid.innerHTML='<div class="punch-loading" style="color:var(--red);">Erreur&nbsp;: '+punchEscape(e.message)+'</div>';
@@ -2341,6 +2347,30 @@ function renderLocationFilter(locs){
   if(active!==f.location){f.location=active;savePunchFilter(f);}
 }
 
+// TODO agencies sont calculées au 1er render, stale si un worker est ajouté/changé pendant la session.
+function renderAgencyFilter(agencies){
+  var ctr=document.getElementById('agencyFilter');
+  if(!ctr)return;
+  if(!agencies || !agencies.length){ctr.innerHTML='';ctr.hidden=true;return;}
+  var f=loadPunchFilter();
+  var active=(f.agency && agencies.indexOf(f.agency)>=0)?f.agency:'';
+  var btns='<button type="button" data-filter-agency=""'+(active===''?' class="active"':'')+'>Toutes</button>';
+  btns+=agencies.map(function(a){
+    var esc=punchEscape(a);
+    return '<button type="button" data-filter-agency="'+esc+'"'+(a===active?' class="active"':'')+'>'+esc+'</button>';
+  }).join('');
+  ctr.innerHTML=btns;
+  if(active!==(f.agency||'')){f.agency=active||null;savePunchFilter(f);}
+}
+
+function updateAgencyFilterVisibility(){
+  var ctr=document.getElementById('agencyFilter');
+  if(!ctr)return;
+  var f=loadPunchFilter();
+  var hasButtons=ctr.querySelectorAll('button[data-filter-agency]').length>0;
+  ctr.hidden=(f.contract!=='interimaire')||!hasButtons;
+}
+
 function restoreContractFilterUI(){
   var f=loadPunchFilter();
   document.querySelectorAll('#contractFilter button').forEach(function(b){
@@ -2354,6 +2384,7 @@ function renderFilteredGrid(){
   var grid=document.getElementById('workerGrid');
   if(!grid)return;
   restoreContractFilterUI();
+  updateAgencyFilterVisibility();
   var f=loadPunchFilter();
   var filtered=_punchWorkers.filter(function(w){
     // contract : 'interimaire' ⇔ type='interim', 'salarie' ⇔ type∈{cdi,cdd,...}
@@ -2364,6 +2395,11 @@ function renderFilteredGrid(){
     if(f.location){
       var wl=w.location||'toulouse';
       if(wl!==f.location)return false;
+    }
+    // agency (uniquement en mode intérimaires, filtre actif = non vide)
+    if(f.contract==='interimaire' && f.agency){
+      var wa=(w.agency||'').toLowerCase();
+      if(wa!==f.agency.toLowerCase())return false;
     }
     return true;
   });
@@ -2871,6 +2907,23 @@ document.addEventListener('DOMContentLoaded',function(){
       // Update UI active state sur les boutons
       lf.querySelectorAll('button').forEach(function(x){
         x.classList.toggle('active',x.getAttribute('data-filter-location')===val);
+      });
+      renderFilteredGrid();
+    });
+  }
+  var af=document.getElementById('agencyFilter');
+  if(af){
+    af.addEventListener('click',function(e){
+      var b=e.target.closest('button[data-filter-agency]');
+      if(!b)return;
+      var val=b.getAttribute('data-filter-agency');
+      var f=loadPunchFilter();
+      var current=f.agency||'';
+      if(current===val)return;
+      f.agency=val||null;
+      savePunchFilter(f);
+      af.querySelectorAll('button').forEach(function(x){
+        x.classList.toggle('active',x.getAttribute('data-filter-agency')===val);
       });
       renderFilteredGrid();
     });
