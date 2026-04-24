@@ -89,7 +89,6 @@ tr:hover td{background:#FAFBFD}
 .edit-break-row .form-control{width:auto;flex:1}
 .btn-icon{width:32px;height:32px;padding:0;display:inline-flex;align-items:center;justify-content:center;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--white);cursor:pointer;color:var(--text2);transition:all .15s;flex-shrink:0}
 .btn-icon:hover{border-color:var(--red);color:var(--red)}
-.btn-icon-add{color:var(--accent);border-color:var(--accent)}.btn-icon-add:hover{background:var(--accent-light)}
 .edit-section{margin-bottom:16px}
 .edit-section-title{font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between}
 .edit-times{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -155,7 +154,6 @@ tr:hover td{background:#FAFBFD}
 .emp-btn:hover{transform:translateY(-1px);box-shadow:var(--shadow)}
 .emp-btn-scan{background:var(--accent);color:#fff}
 .emp-btn-pause{background:var(--orange);color:#fff}
-.emp-btn-pause-end{background:var(--purple);color:#fff}
 .emp-scan-zone{margin:16px auto;width:100%;max-width:320px;aspect-ratio:4/3;background:#000;border-radius:var(--radius);overflow:hidden;position:relative}
 .emp-scan-zone video{width:100%;height:100%;object-fit:cover}
 .emp-result{margin-top:16px;padding:16px;border-radius:var(--radius);animation:fadeRow .3s ease-out}
@@ -211,7 +209,6 @@ tr:hover td{background:#FAFBFD}
 .punch-a-inner{max-width:720px;margin:0 auto;width:100%;flex:1;display:flex;flex-direction:column}
 .punch-a-head{text-align:center;margin:20px 0 28px}
 .punch-a-head h1{margin:16px 0 0;font-size:22px;font-weight:700;color:var(--text)}
-.punch-logo{height:44px;width:auto}
 /* Grille 2 colonnes : grid-template-columns:1fr 1fr force 2 cols sur mobile
    et desktop. grid-auto-rows:130px fixe la hauteur de chaque rangée
    (évite les tiles qui s'étirent à 50% de l'écran quand il y a peu de workers).
@@ -222,7 +219,6 @@ tr:hover td{background:#FAFBFD}
 .worker-tile:hover,.worker-tile:active{border-color:var(--accent);transform:translateY(-1px);box-shadow:var(--shadow)}
 .worker-tile .tile-initials{width:56px;height:56px;border-radius:50%;background:var(--accent-light);color:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:20px;letter-spacing:0.02em}
 .worker-tile .tile-name{font-size:14px;font-weight:600;color:var(--text);text-align:center;line-height:1.3}
-.worker-tile .tile-type{font-size:11px;color:var(--text3)}
 .punch-a-footer{text-align:center;padding:24px 0 12px}
 .punch-admin-link{font-size:13px;color:#4b5563;text-decoration:underline;text-underline-offset:3px;font-weight:500}
 .punch-admin-link:hover{color:var(--accent)}
@@ -1024,10 +1020,6 @@ function scanEmpQR(expectedAction){
 // ═══ QR VALIDATION ═══
 // getQRSecret() defined in API data layer (_qrSecret cache)
 
-function makeQRPayload(posteId){
-  return 'iziship:'+getQRSecret()+':'+posteId;
-}
-
 function validateQR(data){
   // Must match format iziship:<secret>:<posteId>
   if(!data||typeof data!=='string')return false;
@@ -1217,7 +1209,7 @@ function gI(){return Date.now().toString(36)+Math.random().toString(36).slice(2,
 
 // Init: load all data from API on startup
 async function initData(){
-  try{await apiPost('init',{});}catch(e){console.log('DB already initialized or error:',e);}
+  try{await apiPost('init',{});}catch(e){}
   if(getToken()){
     await Promise.all([syncWorkers(),syncRecords(tS()),syncPostes(),syncQRSecret()]);
   }
@@ -1996,7 +1988,6 @@ document.addEventListener('keydown',function(e){
 });
 
 // Auto-focus manual input when switching to scanner page
-var origNavClick=null;
 document.querySelectorAll('.nav-item[data-page]').forEach(function(b){
   b.addEventListener('click',function(){
     if(b.dataset.page==='scanner'){
@@ -2188,10 +2179,6 @@ function workerSessionIsFresh(){
 }
 function hapticTap(){if(navigator.vibrate)try{navigator.vibrate(10);}catch(e){}}
 
-// Log secret avec prefix 8 chars + "..." — JAMAIS le token entier
-function logTokenPrefix(label,token){
-  try{console.log('[punch]',label,(token||'').substring(0,8)+'...');}catch(e){}
-}
 
 // Escape HTML pour injection innerHTML
 function punchEscape(s){
@@ -2493,7 +2480,6 @@ async function handlePunchScanResult(qrData){
   try{var u=new URL(qrData);token=u.searchParams.get('station_token');}catch(e){}
   if(!token)token=String(qrData||'').trim();
   if(!token){toast('QR code invalide','error');if(punchFlow.screen==='B')startPunchScan();return;}
-  logTokenPrefix('scan_qr token_prefix=',token);
   await validatePunchStationToken(token);
 }
 
@@ -2537,7 +2523,6 @@ async function submitPunchCode(){
       throw new Error('Station invalide');
     }
     punchFlow.station={id:d.station.id,name:d.station.name,secret_token:d.station.secret_token};
-    logTokenPrefix('manual_code verified, token_prefix=',d.station.secret_token);
     goToPunchScreen('C');
   }catch(e){
     toast('Station invalide&nbsp;: '+e.message,'error');
@@ -2691,7 +2676,6 @@ function onPinSuccess(data){
   }
   // Persist session localStorage (16h TTL, cleared on departure)
   setWorkerSessionLS(data.token,data.expires_at,punchFlow.worker.id,punchFlow.worker.name);
-  logTokenPrefix('pin_success token_prefix=',data.token);
   goToPunchScreen('D');
 }
 
@@ -2809,7 +2793,6 @@ async function consumeUrlStationToken(){
     var d=await punchPublicFetch('stations/verify',{method:'POST',body:JSON.stringify({token:t})});
     if(d && d.ok && d.station){
       punchFlow.station={id:d.station.id,name:d.station.name,secret_token:t};
-      logTokenPrefix('url_station_token_prefix=',t);
     }
   }catch(e){/* silent, fall back to flow normal */}
 }
@@ -3012,8 +2995,6 @@ function openStationPrintWindow(st){
   var codeEsc=escapeAttr(st.code_short||'');
   var qrAppUrlJson=JSON.stringify(qrAppUrl);
   var qrScriptSrcEsc=escapeAttr(qrScriptSrc);
-  // Log minimal : surtout PAS le secret entier. Prefix 8 chars suffit pour audit.
-  try{console.log('[stations] print window opened for',codeEsc,'token_prefix=',(st.secret_token||'').substring(0,8)+'...');}catch(e){}
   // Note : qrcodejs (davidshimjs) rend dans un <div> donné via `new QRCode(elem, opts)`.
   // Il crée à l'intérieur un canvas OU une table selon le navigateur. On force
   // width/height à 600px (haute résolution pour print ~300 DPI à 70mm) et on scale
@@ -3184,8 +3165,6 @@ function doGenerateQR(){
     toast('Page QR codes ouverte dans un nouvel onglet');
   }
 }
-
-function generateQRCodes(){doGenerateQR();}
 
 function openPosteManager(){
   var postes=loadPostes();
