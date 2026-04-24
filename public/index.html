@@ -212,14 +212,28 @@ tr:hover td{background:#FAFBFD}
 .punch-a-head{text-align:center;margin:20px 0 28px}
 .punch-a-head h1{margin:16px 0 0;font-size:22px;font-weight:700;color:var(--text)}
 .punch-logo{height:44px;width:auto}
-.worker-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;flex:1}
-.worker-tile{background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px 12px;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:10px;transition:all .15s;min-height:150px}
+/* Grille 2 colonnes : grid-template-columns:1fr 1fr force 2 cols sur mobile
+   et desktop. grid-auto-rows:130px fixe la hauteur de chaque rangée
+   (évite les tiles qui s'étirent à 50% de l'écran quand il y a peu de workers).
+   Pas de flex:1 sur la grille → elle prend sa hauteur naturelle, le footer
+   Administration n'est plus poussé en bas. */
+.worker-grid{display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:130px;gap:12px;align-content:start}
+.worker-tile{background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 12px;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;transition:all .15s}
 .worker-tile:hover,.worker-tile:active{border-color:var(--accent);transform:translateY(-1px);box-shadow:var(--shadow)}
 .worker-tile .tile-initials{width:56px;height:56px;border-radius:50%;background:var(--accent-light);color:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:20px;letter-spacing:0.02em}
 .worker-tile .tile-name{font-size:14px;font-weight:600;color:var(--text);text-align:center;line-height:1.3}
 .worker-tile .tile-type{font-size:11px;color:var(--text3)}
 .punch-a-footer{text-align:center;padding:24px 0 12px}
-.punch-admin-link{font-size:12px;color:var(--text3);text-decoration:underline;text-underline-offset:3px}
+.punch-admin-link{font-size:13px;color:#4b5563;text-decoration:underline;text-underline-offset:3px;font-weight:500}
+.punch-admin-link:hover{color:var(--accent)}
+
+/* ═══ Segmented controls iOS-like pour filtres location/contrat ═══ */
+.seg-control{display:inline-flex;background:#f3f4f6;border-radius:10px;padding:3px;gap:2px;margin:0 auto 12px;max-width:100%}
+.seg-control button{background:transparent;border:none;font-family:inherit;font-size:13px;font-weight:600;color:#6b7280;padding:7px 16px;border-radius:7px;cursor:pointer;transition:all .15s;white-space:nowrap}
+.seg-control button.active{background:#3b82f6;color:#fff;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.seg-control button:not(.active):hover{color:#111827}
+.punch-filters{display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:16px}
+.worker-empty{grid-column:1/-1;text-align:center;padding:40px 20px;color:var(--text3);font-size:14px}
 .punch-loading{text-align:center;color:var(--text3);padding:40px;font-size:14px;grid-column:1 / -1}
 
 .punch-b-inner,.punch-c-inner,.punch-d-inner,.punch-e-inner{max-width:520px;margin:0 auto;width:100%;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px}
@@ -274,8 +288,8 @@ tr:hover td{background:#FAFBFD}
 .confirm-countdown{font-size:12px;color:rgba(255,255,255,.7);text-align:center;margin-top:30px}
 
 @media (max-width:480px){
-  .worker-grid{grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px}
-  .worker-tile{min-height:130px;padding:16px 10px}
+  .worker-grid{gap:10px;grid-auto-rows:120px}
+  .worker-tile{padding:12px 10px}
   .worker-tile .tile-initials{width:48px;height:48px;font-size:17px}
   .pin-keypad{grid-template-columns:repeat(3,64px);gap:10px}
   .pin-keypad button{width:64px;height:64px;font-size:22px}
@@ -311,6 +325,13 @@ Changer d&#39;utilisateur
 <div class="punch-a-inner">
 <div class="punch-a-head">
 <h1>Qui pointe&nbsp;?</h1>
+</div>
+<div class="punch-filters">
+<div class="seg-control" id="locationFilter" hidden></div>
+<div class="seg-control" id="contractFilter">
+<button type="button" data-filter-contract="salarie" class="active">Salari&eacute;s</button>
+<button type="button" data-filter-contract="interimaire">Int&eacute;rimaires</button>
+</div>
 </div>
 <div class="worker-grid" id="workerGrid"><div class="punch-loading">Chargement&hellip;</div></div>
 <div class="punch-a-footer">
@@ -676,6 +697,7 @@ Bonjour ! Je suis votre assistant RH. Je peux analyser vos donn&#233;es de point
 <div class="form-group"><label class="form-label">Type</label><select class="form-control" id="newType"><option value="interim">Int&#233;rimaire</option><option value="cdi">CDI</option><option value="cdd">CDD</option></select></div>
 <div class="form-group"><label class="form-label">T&#233;l&#233;phone (optionnel)</label><input type="text" class="form-control" id="newPhone" placeholder="06 xx xx xx xx"></div>
 <div class="form-group"><label class="form-label">Code badge (code-barre)</label><input type="text" class="form-control" id="newBadge" placeholder="Scanner ou saisir le code du badge"></div>
+<div class="form-group"><label class="form-label">Site (location)</label><input type="text" class="form-control" id="newLocation" value="toulouse" placeholder="toulouse, paris, lyon..."></div>
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
 <div class="form-group"><label class="form-label">Arriv&#233;e th&#233;orique</label><input type="time" class="form-control" id="newSchedIn" value="08:00"></div>
 <div class="form-group"><label class="form-label">D&#233;part th&#233;orique</label><input type="time" class="form-control" id="newSchedOut" value="16:00"></div>
@@ -1087,7 +1109,7 @@ async function apiDelete(path){return apiFetch(path,{method:'DELETE'});}
 // Sync to/from server
 async function syncWorkers(){
   try{_workersCache=await apiGet('workers');
-  _workersCache=_workersCache.map(function(w){return{id:w.id,name:w.name,agency:w.agency,type:w.type,phone:w.phone,badge:w.badge,schedIn:w.sched_in||w.schedIn||'08:00',schedOut:w.sched_out||w.schedOut||'16:00'};});
+  _workersCache=_workersCache.map(function(w){return{id:w.id,name:w.name,agency:w.agency,type:w.type,phone:w.phone,badge:w.badge,schedIn:w.sched_in||w.schedIn||'08:00',schedOut:w.sched_out||w.schedOut||'16:00',location:w.location||'toulouse'};});
   }catch(e){console.error('syncWorkers error:',e);}
 }
 async function syncRecords(date,from,to){
@@ -1215,12 +1237,12 @@ function refreshSel(){
   });
 }
 function openAddModal(){document.getElementById('addModal').classList.add('open');document.getElementById('newName').focus();}
-function closeAddModal(){document.getElementById('addModal').classList.remove('open');['newName','newAgency','newPhone','newBadge'].forEach(function(id){document.getElementById(id).value='';});var si=document.getElementById('newSchedIn');var so=document.getElementById('newSchedOut');if(si)si.value='08:00';if(so)so.value='16:00';}
+function closeAddModal(){document.getElementById('addModal').classList.remove('open');['newName','newAgency','newPhone','newBadge'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});var si=document.getElementById('newSchedIn');var so=document.getElementById('newSchedOut');var nl=document.getElementById('newLocation');if(si)si.value='08:00';if(so)so.value='16:00';if(nl)nl.value='toulouse';}
 async function addWorker(){
   var name=document.getElementById('newName').value.trim();
   if(!name){toast('Veuillez entrer un nom','error');return;}
   try{
-    await apiAddWorker({name:name,agency:document.getElementById('newAgency').value.trim(),type:document.getElementById('newType').value,phone:document.getElementById('newPhone').value.trim(),badge:document.getElementById('newBadge').value.trim(),schedIn:document.getElementById('newSchedIn').value||'08:00',schedOut:document.getElementById('newSchedOut').value||'16:00'});
+    await apiAddWorker({name:name,agency:document.getElementById('newAgency').value.trim(),type:document.getElementById('newType').value,phone:document.getElementById('newPhone').value.trim(),badge:document.getElementById('newBadge').value.trim(),schedIn:document.getElementById('newSchedIn').value||'08:00',schedOut:document.getElementById('newSchedOut').value||'16:00',location:(document.getElementById('newLocation').value||'toulouse').trim().toLowerCase()});
     closeAddModal();refreshSel();renderWorkersTable();toast(name+' ajout\u00e9(e)');
   }catch(e){toast('Erreur: '+e.message,'error');}
 }
@@ -1235,6 +1257,7 @@ function editWorker(id){
     '<div class="form-group"><label class="form-label">Type</label><select class="form-control" id="editWType"><option value="interim"'+(w.type==='interim'?' selected':'')+'>Int\u00e9rimaire</option><option value="cdi"'+(w.type==='cdi'?' selected':'')+'>CDI</option><option value="cdd"'+(w.type==='cdd'?' selected':'')+'>CDD</option></select></div>'+
     '<div class="form-group"><label class="form-label">T\u00e9l\u00e9phone</label><input type="text" class="form-control" id="editWPhone" value="'+(w.phone||'')+'"></div>'+
     '<div class="form-group"><label class="form-label">Code badge</label><input type="text" class="form-control" id="editWBadge" value="'+(w.badge||'')+'"></div>'+
+    '<div class="form-group"><label class="form-label">Site (location)</label><input type="text" class="form-control" id="editWLocation" value="'+(w.location||'toulouse')+'" placeholder="toulouse, paris, lyon..."></div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">'+
     '<div class="form-group"><label class="form-label">Arriv\u00e9e th\u00e9orique</label><input type="time" class="form-control" id="editWSchedIn" value="'+(w.schedIn||'08:00')+'"></div>'+
     '<div class="form-group"><label class="form-label">D\u00e9part th\u00e9orique</label><input type="time" class="form-control" id="editWSchedOut" value="'+(w.schedOut||'16:00')+'"></div>'+
@@ -1244,7 +1267,7 @@ function editWorker(id){
 }
 async function saveEditWorker(id){
   try{
-    await apiUpdateWorker(id,{name:document.getElementById('editWName').value.trim(),agency:document.getElementById('editWAgency').value.trim(),type:document.getElementById('editWType').value,phone:document.getElementById('editWPhone').value.trim(),badge:document.getElementById('editWBadge').value.trim(),schedIn:document.getElementById('editWSchedIn').value||'08:00',schedOut:document.getElementById('editWSchedOut').value||'16:00'});
+    await apiUpdateWorker(id,{name:document.getElementById('editWName').value.trim(),agency:document.getElementById('editWAgency').value.trim(),type:document.getElementById('editWType').value,phone:document.getElementById('editWPhone').value.trim(),badge:document.getElementById('editWBadge').value.trim(),schedIn:document.getElementById('editWSchedIn').value||'08:00',schedOut:document.getElementById('editWSchedOut').value||'16:00',location:(document.getElementById('editWLocation').value||'toulouse').trim().toLowerCase()});
     closeEditWorker();refreshSel();renderWorkersTable();toast('Modifi\u00e9');
   }catch(e){toast('Erreur: '+e.message,'error');}
 }
@@ -2073,7 +2096,21 @@ function hideLoginScreen(){
   goToPunchScreen('A');
 }
 
-// ─── Écran A : grille workers ─────────────────────────────────────────
+// ─── Écran A : grille workers avec filtres location + contract ───────
+var _punchWorkers=[]; // cache liste workers (rafraîchie à chaque entrée écran A)
+var PUNCH_FILTER_KEY='punch_filter'; // localStorage {location, contract}
+
+function loadPunchFilter(){
+  try{
+    var s=JSON.parse(localStorage.getItem(PUNCH_FILTER_KEY));
+    if(s && typeof s==='object')return s;
+  }catch(e){}
+  return {location:null,contract:'salarie'};
+}
+function savePunchFilter(f){
+  try{localStorage.setItem(PUNCH_FILTER_KEY,JSON.stringify(f));}catch(e){}
+}
+
 async function renderWorkerGrid(){
   var grid=document.getElementById('workerGrid');
   if(!grid)return;
@@ -2081,18 +2118,79 @@ async function renderWorkerGrid(){
   try{
     var workers=await punchPublicFetch('public/worker-names');
     workers.sort(function(a,b){return (a.name||'').localeCompare(b.name||'');});
+    _punchWorkers=workers;
     if(!workers.length){
       grid.innerHTML='<div class="punch-loading">Aucun salari&eacute; enregistr&eacute;.</div>';
+      renderLocationFilter([]);
       return;
     }
-    grid.innerHTML=workers.map(function(w){
-      var ini=punchInitials(w.name);
-      return '<button type="button" class="worker-tile" data-worker-id="'+w.id+'" data-worker-name="'+punchEscape(w.name)+'"><div class="tile-initials">'+punchEscape(ini)+'</div><div class="tile-name">'+punchEscape(w.name)+'</div></button>';
-    }).join('');
+    // Liste distincte des sites pour le filtre location
+    var locs=[];
+    workers.forEach(function(w){var l=w.location||'toulouse';if(locs.indexOf(l)<0)locs.push(l);});
+    locs.sort();
+    renderLocationFilter(locs);
+    renderFilteredGrid();
   }catch(e){
     grid.innerHTML='<div class="punch-loading" style="color:var(--red);">Erreur&nbsp;: '+punchEscape(e.message)+'</div>';
   }
 }
+
+function renderLocationFilter(locs){
+  var ctr=document.getElementById('locationFilter');
+  if(!ctr)return;
+  // Si 0 ou 1 site, pas de filtre location (on filtre juste sur contract).
+  if(!locs || locs.length<2){ctr.hidden=true;ctr.innerHTML='';return;}
+  ctr.hidden=false;
+  var f=loadPunchFilter();
+  // Si la location persistée n'existe plus dans les workers, on prend la 1re.
+  var active=(f.location && locs.indexOf(f.location)>=0)?f.location:locs[0];
+  ctr.innerHTML=locs.map(function(l){
+    var esc=punchEscape(l);
+    var lbl=esc.charAt(0).toUpperCase()+esc.slice(1);
+    return '<button type="button" data-filter-location="'+esc+'"'+(l===active?' class="active"':'')+'>'+lbl+'</button>';
+  }).join('');
+  // Persiste la valeur effective (au cas où fallback)
+  if(active!==f.location){f.location=active;savePunchFilter(f);}
+}
+
+function restoreContractFilterUI(){
+  var f=loadPunchFilter();
+  document.querySelectorAll('#contractFilter button').forEach(function(b){
+    var c=b.getAttribute('data-filter-contract');
+    if(c===f.contract)b.classList.add('active');
+    else b.classList.remove('active');
+  });
+}
+
+function renderFilteredGrid(){
+  var grid=document.getElementById('workerGrid');
+  if(!grid)return;
+  restoreContractFilterUI();
+  var f=loadPunchFilter();
+  var filtered=_punchWorkers.filter(function(w){
+    // contract : 'interimaire' ⇔ type='interim', 'salarie' ⇔ type∈{cdi,cdd,...}
+    var isInterim=(w.type==='interim');
+    var wantInterim=(f.contract==='interimaire');
+    if(isInterim!==wantInterim)return false;
+    // location (si filtre actif)
+    if(f.location){
+      var wl=w.location||'toulouse';
+      if(wl!==f.location)return false;
+    }
+    return true;
+  });
+  if(!filtered.length){
+    var msg=(f.contract==='interimaire')?'Aucun int&eacute;rimaire':'Aucun salari&eacute;';
+    if(f.location)msg+=' sur ce site';
+    grid.innerHTML='<div class="worker-empty">'+msg+'.</div>';
+    return;
+  }
+  grid.innerHTML=filtered.map(function(w){
+    var ini=punchInitials(w.name);
+    return '<button type="button" class="worker-tile" data-worker-id="'+w.id+'" data-worker-name="'+punchEscape(w.name)+'"><div class="tile-initials">'+punchEscape(ini)+'</div><div class="tile-name">'+punchEscape(w.name)+'</div></button>';
+  }).join('');
+}
+
 function punchInitials(name){
   if(!name)return '?';
   var p=String(name).trim().split(/\s+/);
@@ -2561,6 +2659,37 @@ document.addEventListener('DOMContentLoaded',function(){
   var ci=document.getElementById('punchCodeInput');
   if(ci){
     ci.addEventListener('keydown',function(e){if(e.key==='Enter')submitPunchCode();});
+  }
+  // Segmented controls (écran A)
+  var cf=document.getElementById('contractFilter');
+  if(cf){
+    cf.addEventListener('click',function(e){
+      var b=e.target.closest('button[data-filter-contract]');
+      if(!b)return;
+      var val=b.getAttribute('data-filter-contract');
+      var f=loadPunchFilter();
+      if(f.contract===val)return;
+      f.contract=val;
+      savePunchFilter(f);
+      renderFilteredGrid();
+    });
+  }
+  var lf=document.getElementById('locationFilter');
+  if(lf){
+    lf.addEventListener('click',function(e){
+      var b=e.target.closest('button[data-filter-location]');
+      if(!b)return;
+      var val=b.getAttribute('data-filter-location');
+      var f=loadPunchFilter();
+      if(f.location===val)return;
+      f.location=val;
+      savePunchFilter(f);
+      // Update UI active state sur les boutons
+      lf.querySelectorAll('button').forEach(function(x){
+        x.classList.toggle('active',x.getAttribute('data-filter-location')===val);
+      });
+      renderFilteredGrid();
+    });
   }
 });
 

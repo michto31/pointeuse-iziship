@@ -340,14 +340,14 @@ exports.handler = async function (event) {
     if (method === "POST" && path === "auth/login") return await handleLogin(body);
     if (method === "POST" && path === "auth/logout") return await handleLogout(event, body);
     if (method === "POST" && path === "auth/change-password") return await handleChangePwd(body);
-    // Minimal public endpoint (id+name only) so the shared-tablet login
-    // dropdown works before any auth token exists. Do NOT broaden this.
-    // Rate-limited (20/min/IP, in-process) to slow scraping.
-    // TODO: filter to active workers only once the workers table gains an
-    // `active` / `archived` column. Currently returns all rows.
+    // Minimal public endpoint pour la grille d'accueil du flow salarié (Phase 5).
+    // Renvoie id, name, type (contract kind), location (site physique).
+    // Type et location sont nécessaires côté client pour les segmented controls
+    // Salariés/Intérimaires × Location. Rate-limited 20/min/IP contre scraping.
+    // TODO: filtrer sur actif=true si/quand la colonne arrive sur workers.
     if (method === "GET" && path === "public/worker-names") {
       if (!checkRateLimit(event, 20)) return json({ error: "Too many requests" }, 429);
-      return json(await sql("SELECT id, name FROM workers ORDER BY name"));
+      return json(await sql("SELECT id, name, type, location FROM workers ORDER BY name"));
     }
 
     if (method === "POST" && path === "assistant") { await requireAuth(event, "admin"); return await handleAssistant(body); }
@@ -360,11 +360,11 @@ exports.handler = async function (event) {
     if (method === "POST" && path === "workers") {
       await requireAuth(event, "admin");
       if (!body.name) return err("Nom requis");
-      return json(await sql1("INSERT INTO workers (name,agency,type,phone,badge,sched_in,sched_out) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *", [body.name, body.agency||"", body.type||"interim", body.phone||"", body.badge||"", body.schedIn||"08:00", body.schedOut||"16:00"]), 201);
+      return json(await sql1("INSERT INTO workers (name,agency,type,phone,badge,sched_in,sched_out,location) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *", [body.name, body.agency||"", body.type||"interim", body.phone||"", body.badge||"", body.schedIn||"08:00", body.schedOut||"16:00", body.location||"toulouse"]), 201);
     }
     if (method === "PUT" && seg[0] === "workers" && seg[1]) {
       await requireAuth(event, "admin");
-      var r = await sql1("UPDATE workers SET name=COALESCE($1,name),agency=COALESCE($2,agency),type=COALESCE($3,type),phone=COALESCE($4,phone),badge=COALESCE($5,badge),sched_in=COALESCE($6,sched_in),sched_out=COALESCE($7,sched_out),updated_at=NOW() WHERE id=$8 RETURNING *", [body.name, body.agency, body.type, body.phone, body.badge, body.schedIn, body.schedOut, parseInt(seg[1])]);
+      var r = await sql1("UPDATE workers SET name=COALESCE($1,name),agency=COALESCE($2,agency),type=COALESCE($3,type),phone=COALESCE($4,phone),badge=COALESCE($5,badge),sched_in=COALESCE($6,sched_in),sched_out=COALESCE($7,sched_out),location=COALESCE($8,location),updated_at=NOW() WHERE id=$9 RETURNING *", [body.name, body.agency, body.type, body.phone, body.badge, body.schedIn, body.schedOut, body.location, parseInt(seg[1])]);
       return r ? json(r) : err("Introuvable", 404);
     }
     if (method === "DELETE" && seg[0] === "workers" && seg[1]) { await requireAuth(event, "admin"); await sql("DELETE FROM workers WHERE id=$1", [parseInt(seg[1])]); return json({ ok: true }); }
@@ -829,6 +829,14 @@ async function initDB() {
   await sql("CREATE TABLE IF NOT EXISTS security_events (id SERIAL PRIMARY KEY, event_type TEXT NOT NULL, worker_id INT REFERENCES workers(id) ON DELETE SET NULL, station_id INT REFERENCES postes(id) ON DELETE SET NULL, details JSONB DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ DEFAULT NOW())");
   await sql("CREATE INDEX IF NOT EXISTS idx_security_events_created ON security_events(created_at DESC)");
   await sql("CREATE INDEX IF NOT EXISTS idx_security_events_type ON security_events(event_type)");
+
+  // ═══ Phase 5.1 — site/location physique des workers ═══
+  // Ajout d'une colonne `location` (free-text, défaut 'toulouse') pour filtrer
+  // la grille des workers par site dans l'écran "Qui pointe ?". Distinct de
+  // `agency` existant qui reste réservé au nom de la boîte d'intérim (Randstad,
+  // Adecco, etc.) pour les workers type='interim'.
+  await sql("ALTER TABLE workers ADD COLUMN IF NOT EXISTS location TEXT DEFAULT 'toulouse'");
+  await sql("CREATE INDEX IF NOT EXISTS idx_workers_location_type ON workers(location, type)");
 }
 
 async function issueSession(role, workerId, hours) {
