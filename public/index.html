@@ -3199,10 +3199,28 @@ function closePosteModal(){
   restoreAddModal();
 }
 
+// Snapshot de la modale Ajouter salarié au boot. Source de vérité unique :
+// le HTML statique de <div id="addModal">. restoreAddModal() réinjecte ce
+// snapshot au lieu d'un template en dur qui divergeait du HTML statique
+// (cf. bug location manquant après edit worker).
+var _ADD_MODAL_HTML=null;
+function snapshotAddModal(){
+  var m=document.getElementById('addModal');
+  if(!m)return;
+  var inner=m.querySelector('.modal');
+  if(inner)_ADD_MODAL_HTML=inner.innerHTML;
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',snapshotAddModal);
+else snapshotAddModal();
+
 function restoreAddModal(){
   var modal=document.getElementById('addModal').querySelector('.modal');
-  modal.innerHTML='<div class="modal-header">Nouveau salari\u00e9</div><div class="modal-body"><div class="form-group"><label class="form-label">Nom complet</label><input type="text" class="form-control" id="newName" placeholder="Ex: Jean Dupont"></div><div class="form-group"><label class="form-label">Agence / Soci\u00e9t\u00e9 int\u00e9rim</label><input type="text" class="form-control" id="newAgency" placeholder="Ex: Adecco, Manpower..."></div><div class="form-group"><label class="form-label">Type</label><select class="form-control" id="newType"><option value="interim">Int\u00e9rimaire</option><option value="cdi">CDI</option><option value="cdd">CDD</option></select></div><div class="form-group"><label class="form-label">T\u00e9l\u00e9phone (optionnel)</label><input type="text" class="form-control" id="newPhone" placeholder="06 xx xx xx xx"></div><div class="form-group"><label class="form-label">Code badge (code-barre)</label><input type="text" class="form-control" id="newBadge" placeholder="Scanner ou saisir le code du badge"></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;"><div class="form-group"><label class="form-label">Arriv\u00e9e th\u00e9orique</label><input type="time" class="form-control" id="newSchedIn" value="08:00"></div><div class="form-group"><label class="form-label">D\u00e9part th\u00e9orique</label><input type="time" class="form-control" id="newSchedOut" value="16:00"></div></div></div><div class="modal-footer"><button class="btn btn-outline" onclick="closeAddModal()">Annuler</button><button class="btn btn-primary" onclick="addWorker()">Ajouter</button></div>';
-  document.getElementById('newName').addEventListener('keydown',function(e){if(e.key==='Enter')addWorker();});
+  if(_ADD_MODAL_HTML===null)return;
+  modal.innerHTML=_ADD_MODAL_HTML;
+  // innerHTML replacement détruit les listeners : ré-attacher l'Enter→submit
+  // sur newName (équivalent du binding statique ligne 3118).
+  var n=document.getElementById('newName');
+  if(n)n.addEventListener('keydown',function(e){if(e.key==='Enter')addWorker();});
 }
 
 // Postes/QR: loadPostes() and getQRSecret() defined in API data layer
