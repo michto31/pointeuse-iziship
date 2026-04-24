@@ -57,7 +57,7 @@ async function setClockState(workerId, newState) {
 
 // Types d'événements security_events. Non contraint en DB (TEXT libre) mais toute
 // insertion doit passer par logSecurityEvent() qui vérifie le type.
-var SECURITY_EVENT_TYPES = { pin_fail: true, pin_lock: true, pin_create: true, pin_reset: true, station_regen: true, station_secret_view: true };
+var SECURITY_EVENT_TYPES = { pin_fail: true, pin_lock: true, pin_create: true, pin_reset: true, station_regen: true, station_secret_view: true, rfid_enroll: true, rfid_unenroll: true, rfid_clock: true, rfid_unknown_card: true, rfid_locked_card: true, rfid_station_invalid: true };
 async function logSecurityEvent(eventType, workerId, stationId, details) {
   if (!SECURITY_EVENT_TYPES[eventType]) throw new Error("Invalid security event type: " + eventType);
   await sql(
@@ -290,14 +290,20 @@ async function handlePinVerifyInner(event, body, seg) {
 // - A real attacker can bypass by rotating IPs or waiting out a cold start, but
 //   casual scrapers hit a 429 quickly which is the bar we want.
 var rateLimitMap = new Map();
-function checkRateLimit(event, maxPerMinute) {
+// 3e param `bucket` (optionnel) : namespace de la clé IP. Sans bucket, on
+// garde le comportement historique (clé=ip). Avec bucket, la clé devient
+// "bucket:ip" — utile pour isoler un endpoint sensible (ex. auth/rfid à
+// 10/min) d'un autre qui partage le même seuil (ex. public/worker-names
+// 20/min) pour que saturation de l'un ne bloque pas l'autre.
+function checkRateLimit(event, maxPerMinute, bucket) {
   var h = event.headers || {};
   var fwd = h["x-forwarded-for"] || h["X-Forwarded-For"] || h["client-ip"] || "";
   var ip = fwd.split(",")[0].trim() || "unknown";
+  var key = bucket ? (bucket + ":" + ip) : ip;
   var now = Date.now();
-  var entry = rateLimitMap.get(ip);
+  var entry = rateLimitMap.get(key);
   if (!entry || now - entry.windowStart > 60000) {
-    rateLimitMap.set(ip, { count: 1, windowStart: now });
+    rateLimitMap.set(key, { count: 1, windowStart: now });
     // Opportunistic cleanup to cap memory on long-lived instances
     if (rateLimitMap.size > 1000) {
       for (var k of rateLimitMap.keys()) { if (now - rateLimitMap.get(k).windowStart > 60000) rateLimitMap.delete(k); }
@@ -340,6 +346,43 @@ exports.handler = async function (event) {
     if (method === "POST" && path === "auth/login") return await handleLogin(body);
     if (method === "POST" && path === "auth/logout") return await handleLogout(event, body);
     if (method === "POST" && path === "auth/change-password") return await handleChangePwd(body);
+
+    // POST /api/auth/rfid [PUBLIC, 10/min/IP bucket rfid_auth] — Phase 6
+    // Body: {uid, station_token}. Ordre de validation strict :
+    //   1. Format UID → 400. 2. Station valide → sinon log station_invalid + 401.
+    //   3. Worker existe avec ce UID → sinon log unknown_card (avec UID CLAIR
+    //      intentionnel pour enrôlement à chaud futur) + 404. 4. pin_locked
+    //      bloque aussi RFID → log locked_card + 423. 5. Issue session worker
+    //      16h + log rfid_clock + return token.
+    // Rate-limit 429 ne logue PAS d'event (sinon DoS = spam du journal).
+    if (method === "POST" && path === "auth/rfid") {
+      if (!checkRateLimit(event, 10, "rfid_auth")) return json({ error: "Too many requests" }, 429);
+      var rfidAuthUid = String((body && body.uid) || "").trim().toUpperCase();
+      if (!/^[0-9A-F]{10}$/.test(rfidAuthUid)) return err("Format UID invalide");
+      var rfidAuthPrefix = rfidAuthUid.substring(0, 4) + "***";
+      var rfidAuthStationToken = String((body && body.station_token) || "").trim();
+      var rfidAuthStation = await sql1("SELECT id FROM postes WHERE secret_token=$1 AND active=true", [rfidAuthStationToken]);
+      if (!rfidAuthStation) {
+        await logSecurityEvent("rfid_station_invalid", null, null, { uid_prefix: rfidAuthPrefix, reason: "invalid_token" });
+        return err("Station invalide", 401);
+      }
+      var rfidAuthWorker = await sql1("SELECT id, name, pin_locked, last_clock_state FROM workers WHERE rfid_uid=$1", [rfidAuthUid]);
+      if (!rfidAuthWorker) {
+        await logSecurityEvent("rfid_unknown_card", null, rfidAuthStation.id, { uid: rfidAuthUid, reason: "no_match" });
+        return err("Carte inconnue", 404);
+      }
+      if (rfidAuthWorker.pin_locked) {
+        await logSecurityEvent("rfid_locked_card", rfidAuthWorker.id, rfidAuthStation.id, { uid_prefix: rfidAuthPrefix });
+        return err("Carte verrouillée", 423);
+      }
+      var rfidAuthSess = await issueSession("worker", rfidAuthWorker.id, 16);
+      await logSecurityEvent("rfid_clock", rfidAuthWorker.id, rfidAuthStation.id, { uid_prefix: rfidAuthPrefix });
+      return json({
+        token: rfidAuthSess.token,
+        expires_at: rfidAuthSess.expires_at,
+        worker: { id: rfidAuthWorker.id, name: rfidAuthWorker.name, last_clock_state: rfidAuthWorker.last_clock_state || "idle" }
+      });
+    }
     // Minimal public endpoint pour la grille d'accueil du flow salarié (Phase 5).
     // Renvoie id, name, type (contract kind), location (site physique).
     // Type et location sont nécessaires côté client pour les segmented controls
@@ -356,7 +399,7 @@ exports.handler = async function (event) {
     if (method === "POST" && path === "agent/feedback") { await requireAuth(event, "admin"); await sql("UPDATE agent_memory SET feedback=$1 WHERE id=$2", [body.feedback, body.id]); return json({ ok: true }); }
     if (method === "GET" && path === "agent/runs") { await requireAuth(event, "admin"); return json(await sql("SELECT * FROM agent_runs ORDER BY run_date DESC LIMIT 20")); }
 
-    if (method === "GET" && path === "workers") { await requireAuth(event, "admin"); return json(await sql("SELECT id, name, agency, type, phone, badge, sched_in, sched_out, location, pin_attempts, pin_locked, last_clock_state, (pin_hash IS NOT NULL) AS has_pin, created_at, updated_at FROM workers ORDER BY type, name")); }
+    if (method === "GET" && path === "workers") { await requireAuth(event, "admin"); return json(await sql("SELECT id, name, agency, type, phone, badge, sched_in, sched_out, location, pin_attempts, pin_locked, last_clock_state, (pin_hash IS NOT NULL) AS has_pin, (rfid_uid IS NOT NULL) AS has_rfid, created_at, updated_at FROM workers ORDER BY type, name")); }
     if (method === "POST" && path === "workers") {
       await requireAuth(event, "admin");
       if (!body.name) return err("Nom requis");
@@ -367,7 +410,7 @@ exports.handler = async function (event) {
       var r = await sql1("UPDATE workers SET name=COALESCE($1,name),agency=COALESCE($2,agency),type=COALESCE($3,type),phone=COALESCE($4,phone),badge=COALESCE($5,badge),sched_in=COALESCE($6,sched_in),sched_out=COALESCE($7,sched_out),location=COALESCE($8,location),updated_at=NOW() WHERE id=$9 RETURNING *", [body.name, body.agency, body.type, body.phone, body.badge, body.schedIn, body.schedOut, body.location, parseInt(seg[1])]);
       return r ? json(r) : err("Introuvable", 404);
     }
-    if (method === "DELETE" && seg[0] === "workers" && seg[1]) { await requireAuth(event, "admin"); await sql("DELETE FROM workers WHERE id=$1", [parseInt(seg[1])]); return json({ ok: true }); }
+    if (method === "DELETE" && seg[0] === "workers" && seg[1] && !seg[2]) { await requireAuth(event, "admin"); await sql("DELETE FROM workers WHERE id=$1", [parseInt(seg[1])]); return json({ ok: true }); }
 
     if (method === "GET" && path === "records") {
       await requireAuth(event, "admin");
@@ -797,6 +840,48 @@ exports.handler = async function (event) {
       return json({ ok: true });
     }
 
+    // POST /api/workers/:id/rfid [admin] — Phase 6
+    // Body: {uid} (10 chars hex uppercase). Rejette 400 si format KO, 404 si
+    // worker introuvable, 409 si UID déjà pris par un autre worker.
+    // Log rfid_enroll avec uid_prefix (4 premiers chars + ***). JAMAIS l'UID
+    // complet en log (réservé à rfid_unknown_card pour enrôlement à chaud).
+    if (method === "POST" && seg[0] === "workers" && seg[1] && seg[2] === "rfid" && !seg[3]) {
+      var rfidEnrollAuth = await requireAuth(event, "admin");
+      var rfidEnrollWorkerId = parseInt(seg[1]);
+      if (!rfidEnrollWorkerId) return err("Worker ID invalide");
+      var rfidEnrollUid = String((body && body.uid) || "").trim().toUpperCase();
+      if (!/^[0-9A-F]{10}$/.test(rfidEnrollUid)) return err("Format UID invalide");
+      var rfidEnrollWorker = await sql1("SELECT id FROM workers WHERE id=$1", [rfidEnrollWorkerId]);
+      if (!rfidEnrollWorker) return err("Worker introuvable", 404);
+      var rfidEnrollTaken = await sql1("SELECT id FROM workers WHERE rfid_uid=$1 AND id<>$2", [rfidEnrollUid, rfidEnrollWorkerId]);
+      if (rfidEnrollTaken) return err("Carte déjà associée à un autre salarié", 409);
+      await sql("UPDATE workers SET rfid_uid=$1, updated_at=NOW() WHERE id=$2", [rfidEnrollUid, rfidEnrollWorkerId]);
+      var rfidEnrollPrefix = rfidEnrollUid.substring(0, 4) + "***";
+      await logSecurityEvent("rfid_enroll", rfidEnrollWorkerId, null, {
+        admin_worker_id: rfidEnrollAuth.worker_id,
+        uid_prefix: rfidEnrollPrefix
+      });
+      return json({ ok: true, uid_prefix: rfidEnrollPrefix });
+    }
+
+    // DELETE /api/workers/:id/rfid [admin] — Phase 6
+    // 404 si worker introuvable OU si pas de carte associée. UPDATE set NULL.
+    // Log rfid_unenroll avec uid_prefix de l'ancienne carte.
+    if (method === "DELETE" && seg[0] === "workers" && seg[1] && seg[2] === "rfid" && !seg[3]) {
+      var rfidUnenrollAuth = await requireAuth(event, "admin");
+      var rfidUnenrollWorkerId = parseInt(seg[1]);
+      if (!rfidUnenrollWorkerId) return err("Worker ID invalide");
+      var rfidUnenrollCurrent = await sql1("SELECT rfid_uid FROM workers WHERE id=$1", [rfidUnenrollWorkerId]);
+      if (!rfidUnenrollCurrent) return err("Worker introuvable", 404);
+      if (!rfidUnenrollCurrent.rfid_uid) return err("Aucune carte associée", 404);
+      await sql("UPDATE workers SET rfid_uid=NULL, updated_at=NOW() WHERE id=$1", [rfidUnenrollWorkerId]);
+      await logSecurityEvent("rfid_unenroll", rfidUnenrollWorkerId, null, {
+        admin_worker_id: rfidUnenrollAuth.worker_id,
+        uid_prefix: rfidUnenrollCurrent.rfid_uid.substring(0, 4) + "***"
+      });
+      return json({ ok: true });
+    }
+
     if (method === "GET" && path === "qr-secret") {
       var row = await sql1("SELECT value FROM settings WHERE key='qr_secret'");
       if (!row) { var s = genSecret(); await sql("INSERT INTO settings (key,value) VALUES ('qr_secret',$1)", [s]); return json({ secret: s }); }
@@ -875,6 +960,14 @@ async function initDB() {
   // Adecco, etc.) pour les workers type='interim'.
   await sql("ALTER TABLE workers ADD COLUMN IF NOT EXISTS location TEXT DEFAULT 'toulouse'");
   await sql("CREATE INDEX IF NOT EXISTS idx_workers_location_type ON workers(location, type)");
+
+  // ═══ Phase 6 — RFID : association carte ↔ worker ═══
+  // Colonne rfid_uid : UID EM4100 en ASCII hex uppercase (10 chars) ou NULL.
+  // UNIQUE partiel : plusieurs workers peuvent avoir NULL simultanément (pas
+  // encore enrôlés), mais deux workers ne peuvent pas partager le même UID.
+  // Format validé côté route (regex /^[0-9A-F]{10}$/), pas de CHECK en DB.
+  await sql("ALTER TABLE workers ADD COLUMN IF NOT EXISTS rfid_uid TEXT");
+  await sql("CREATE UNIQUE INDEX IF NOT EXISTS idx_workers_rfid_uid ON workers(rfid_uid) WHERE rfid_uid IS NOT NULL");
 }
 
 async function issueSession(role, workerId, hours) {

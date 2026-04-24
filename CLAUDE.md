@@ -72,6 +72,21 @@ Client side, the `apiFetch` wrapper in `public/index.html` auto-injects `Authori
 
 Default admin password is still `'admin'` — MUST be changed in production via `POST /api/auth/change-password`.
 
+## RFID borne (Phase 6)
+
+Pointage self-service par carte RFID EM4100 (125 kHz) via un lecteur Parallax #28340 USB branché sur un MacMini qui héberge une page borne plein écran. Lecteur validé empiriquement en avril 2026 : trame `\n + 10 chars ASCII hex uppercase + \r` en série 2400 8N1, `DTR=True` requis (sinon pas de transmission). Web Serial API côté navigateur — Chrome/Edge only, HTTPS obligatoire.
+
+Colonne `workers.rfid_uid` (nullable) : UID EM4100 en ASCII hex uppercase (10 chars). Index UNIQUE partiel `WHERE rfid_uid IS NOT NULL` : deux workers ne peuvent pas partager le même UID, mais N workers peuvent être non-enrôlés simultanément. `GET /api/workers` expose `(rfid_uid IS NOT NULL) AS has_rfid` — le UID lui-même n'est **jamais** retourné côté client dans les listes (pattern identique à `pin_hash` / `has_pin`).
+
+Routes Phase 6 :
+- `POST /api/workers/:id/rfid` [admin] — body `{uid}`, regex `/^[0-9A-F]{10}$/`. 404 worker, 409 si UID déjà pris. Log `rfid_enroll` avec `uid_prefix` masqué.
+- `DELETE /api/workers/:id/rfid` [admin] — 404 si pas de carte associée. Log `rfid_unenroll`.
+- `POST /api/auth/rfid` [PUBLIC, rate-limited **10/min/IP bucket `rfid_auth`**] — body `{uid, station_token}`. Valide station → 401. Lookup worker → 404 et log `rfid_unknown_card` **avec UID complet en clair** (intentionnel, sert à l'enrôlement à chaud futur depuis le journal). `pin_locked` bloque RFID aussi → 423 + log `rfid_locked_card`. Succès : issue session worker 16h + log `rfid_clock` + return `{token, expires_at, worker:{id, name, last_clock_state}}`. Le rate-limit 429 ne log PAS d'event (sinon DoS = spam journal).
+
+Types `security_events` ajoutés (6) : `rfid_enroll`, `rfid_unenroll`, `rfid_clock`, `rfid_unknown_card`, `rfid_locked_card`, `rfid_station_invalid`. Constante `SECURITY_EVENT_TYPES` côté `api.js` reste la source de vérité (event_type DB est TEXT libre, pas de CHECK).
+
+Règle stricte sur les logs RFID : `uid_prefix = uid.substring(0,4) + "***"` partout SAUF dans `rfid_unknown_card.details.uid` qui reçoit l'UID complet (réservé à ce flux d'enrôlement à chaud). `checkRateLimit(event, N, bucket)` accepte un 3e argument optionnel pour isoler les seuils par endpoint — sans `bucket` on garde le comportement historique (clé = IP seule).
+
 ## Conventions when editing
 
 - Prefer ES5-style `var` + `function` in both files — that's what the existing code uses and there's no transpile step for the function (esbuild will accept modern syntax, but the frontend runs as-is in browsers and matches the function style).
