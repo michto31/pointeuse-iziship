@@ -55,9 +55,118 @@ async function setClockState(workerId, newState) {
   await sql("UPDATE workers SET last_clock_state=$1 WHERE id=$2", [newState, parseInt(workerId)]);
 }
 
+// ─── Phase 6 — auto-clôture des pointages orphelins ──────────────────────
+// Règle métier : 1 pointage = 1 jour calendaire. Si un worker scanne un
+// nouveau jour avec un record d'un jour précédent encore ouvert (departure
+// IS NULL), on auto-clôture le record orphelin avant de traiter le scan.
+// Évite le 409 "Aucun pointage ouvert pour aujourd'hui" + remet l'état
+// worker à 'idle' pour que la state machine accepte la nouvelle arrival.
+//
+// Implémentation : 1 cleanup par appel (pas de récursion sur multi-jours,
+// rare). Departure auto = arrival + (sched_out - sched_in) minutes,
+// fallback 480 (8h) si schedule manquant ou invalide. Wrap-around 24h pour
+// supporter les horaires de nuit (sched_out < sched_in).
+function hhmmToMin(s) {
+  var p = String(s).split(":");
+  return parseInt(p[0], 10) * 60 + parseInt(p[1], 10);
+}
+function minToHHMM(m) {
+  m = ((m % 1440) + 1440) % 1440;
+  return String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
+}
+function computeShiftDuration(schedIn, schedOut) {
+  if (!schedIn || !schedOut) return 480;
+  if (!/^\d{2}:\d{2}$/.test(schedIn) || !/^\d{2}:\d{2}$/.test(schedOut)) return 480;
+  var d = (hhmmToMin(schedOut) - hhmmToMin(schedIn) + 1440) % 1440;
+  return d === 0 ? 480 : d;
+}
+function daysBetweenISO(today, orphanDate) {
+  var t = new Date(today + "T00:00:00Z").getTime();
+  var o = new Date(orphanDate + "T00:00:00Z").getTime();
+  return Math.round((t - o) / (24 * 3600 * 1000));
+}
+
+async function closeOrphanPointages(workerId) {
+  if (!workerId) return;
+  // Trouve le record le plus récent encore ouvert (departure NULL).
+  var orphan = await sql1(
+    "SELECT id, date, arrival, breaks, station_id FROM records " +
+    "WHERE worker_id=$1 AND departure IS NULL " +
+    "ORDER BY date DESC, id DESC LIMIT 1",
+    [workerId]
+  );
+  if (!orphan) return;
+
+  var orphanDateStr = String(orphan.date).substring(0, 10);
+  var todayParis = getParisDate();
+  // Comparaison lex sur YYYY-MM-DD : si le record est aujourd'hui (ou plus tard,
+  // improbable), pas un orphan — on laisse le flux normal le gérer.
+  if (orphanDateStr >= todayParis) return;
+
+  // Cas dégénéré : record ouvert sans arrival valide. On log l'anomalie sans
+  // tenter de calculer un departure (l'admin verra l'event et corrigera).
+  if (!orphan.arrival || !/^\d{2}:\d{2}$/.test(orphan.arrival)) {
+    await logSecurityEvent("pointage_orphan_closed", workerId, orphan.station_id || null, {
+      worker_id: workerId,
+      orphan_record_id: orphan.id,
+      orphan_record_date: orphanDateStr,
+      original_arrival_hhmm: orphan.arrival || null,
+      auto_departure_hhmm: null,
+      days_late: daysBetweenISO(todayParis, orphanDateStr),
+      had_open_break: false,
+      reason: "auto_close_failed_no_arrival"
+    });
+    return;
+  }
+
+  var workerSched = await sql1("SELECT sched_in, sched_out FROM workers WHERE id=$1", [workerId]);
+  var duration = computeShiftDuration(
+    workerSched && workerSched.sched_in,
+    workerSched && workerSched.sched_out
+  );
+  var arrivalMin = hhmmToMin(orphan.arrival);
+  var autoDepartureHHMM = minToHHMM(arrivalMin + duration);
+
+  // Si un break était ouvert, le clôturer avant le departure (break_end =
+  // break_start + 30min, fallback : arrival+1min si start invalide).
+  var breaks = orphan.breaks;
+  if (typeof breaks === "string") { try { breaks = JSON.parse(breaks); } catch (e) { breaks = []; } }
+  if (!Array.isArray(breaks)) breaks = [];
+  var hadOpenBreak = breaks.length > 0 && !breaks[breaks.length - 1].end;
+  if (hadOpenBreak) {
+    var lastBreak = breaks[breaks.length - 1];
+    if (lastBreak.start && /^\d{2}:\d{2}$/.test(lastBreak.start)) {
+      breaks[breaks.length - 1].end = minToHHMM(hhmmToMin(lastBreak.start) + 30);
+    } else {
+      breaks[breaks.length - 1].end = minToHHMM(arrivalMin + 1);
+    }
+  }
+
+  // UPDATE record + reset worker → idle. Pas de transaction explicite (Neon
+  // HTTP n'en a pas natif) — si le 2e UPDATE échoue, le record est déjà clos
+  // mais le state worker reste at_work : le scan en cours échouera, l'admin
+  // verra l'event orphan_closed et pourra corriger à la main.
+  await sql(
+    "UPDATE records SET departure=$1, breaks=$2::jsonb, updated_at=NOW() WHERE id=$3",
+    [autoDepartureHHMM, JSON.stringify(breaks), orphan.id]
+  );
+  await setClockState(workerId, "idle");
+
+  await logSecurityEvent("pointage_orphan_closed", workerId, orphan.station_id || null, {
+    worker_id: workerId,
+    orphan_record_id: orphan.id,
+    orphan_record_date: orphanDateStr,
+    original_arrival_hhmm: orphan.arrival,
+    auto_departure_hhmm: autoDepartureHHMM,
+    days_late: daysBetweenISO(todayParis, orphanDateStr),
+    had_open_break: hadOpenBreak,
+    reason: "auto_close_on_new_day"
+  });
+}
+
 // Types d'événements security_events. Non contraint en DB (TEXT libre) mais toute
 // insertion doit passer par logSecurityEvent() qui vérifie le type.
-var SECURITY_EVENT_TYPES = { pin_fail: true, pin_lock: true, pin_create: true, pin_reset: true, station_regen: true, station_secret_view: true, rfid_enroll: true, rfid_unenroll: true, rfid_clock: true, rfid_unknown_card: true, rfid_locked_card: true, rfid_station_invalid: true };
+var SECURITY_EVENT_TYPES = { pin_fail: true, pin_lock: true, pin_create: true, pin_reset: true, station_regen: true, station_secret_view: true, rfid_enroll: true, rfid_unenroll: true, rfid_clock: true, rfid_unknown_card: true, rfid_locked_card: true, rfid_station_invalid: true, pointage_orphan_closed: true };
 async function logSecurityEvent(eventType, workerId, stationId, details) {
   if (!SECURITY_EVENT_TYPES[eventType]) throw new Error("Invalid security event type: " + eventType);
   await sql(
@@ -375,12 +484,20 @@ exports.handler = async function (event) {
         await logSecurityEvent("rfid_locked_card", rfidAuthWorker.id, rfidAuthStation.id, { uid_prefix: rfidAuthPrefix });
         return err("Carte verrouillée", 423);
       }
+      // Phase 6 — auto-clôture des records orphelins du jour précédent (cf
+      // closeOrphanPointages). Si nettoyage : worker passe en 'idle' avant la
+      // suite, donc le borne pourra envoyer 'arrival' au /api/clock qui suit.
+      await closeOrphanPointages(rfidAuthWorker.id);
+      // Re-SELECT last_clock_state pour refléter l'éventuel cleanup ci-dessus
+      // (la valeur en mémoire sur rfidAuthWorker peut être stale).
+      var rfidAuthFresh = await sql1("SELECT last_clock_state FROM workers WHERE id=$1", [rfidAuthWorker.id]);
+      var rfidAuthState = (rfidAuthFresh && rfidAuthFresh.last_clock_state) || "idle";
       var rfidAuthSess = await issueSession("worker", rfidAuthWorker.id, 16);
       await logSecurityEvent("rfid_clock", rfidAuthWorker.id, rfidAuthStation.id, { uid_prefix: rfidAuthPrefix });
       return json({
         token: rfidAuthSess.token,
         expires_at: rfidAuthSess.expires_at,
-        worker: { id: rfidAuthWorker.id, name: rfidAuthWorker.name, last_clock_state: rfidAuthWorker.last_clock_state || "idle", sched_out: rfidAuthWorker.sched_out || "16:00" }
+        worker: { id: rfidAuthWorker.id, name: rfidAuthWorker.name, last_clock_state: rfidAuthState, sched_out: rfidAuthWorker.sched_out || "16:00" }
       });
     }
     // Minimal public endpoint pour la grille d'accueil du flow salarié (Phase 5).
@@ -670,6 +787,12 @@ exports.handler = async function (event) {
 
       var clkStation = await verifyStationToken(body && body.station_token);
       if (!clkStation) return err("Station invalide", 401);
+
+      // Phase 6 — auto-clôture défensive des records orphelins. Le borne RFID
+      // a déjà fait l'appel via /api/auth/rfid juste avant, donc c'est un no-op
+      // pour ce flux. Reste utile pour le flux PIN qui passe directement ici
+      // (le worker peut alors enchaîner en 'arrival' après reset → 'idle').
+      await closeOrphanPointages(clkWorkerId);
 
       // Source de vérité = DB workers.last_clock_state (pas la session, qui pourrait dater).
       var clkWorker = await sql1("SELECT id, name, agency, last_clock_state FROM workers WHERE id=$1", [clkWorkerId]);

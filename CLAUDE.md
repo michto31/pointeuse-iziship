@@ -112,6 +112,18 @@ Heartbeat : `setInterval` 60s sur `POST /api/init` pour garder le Mac actif côt
 
 Disconnect handling : `navigator.serial.addEventListener('disconnect',...)` détecte le débranchement USB → état `error` "Lecteur déconnecté". À la reconnexion (`connect` event), tente automatiquement `getPorts()` + `borneOpenPort()` pour reprendre.
 
+### Robustesse pointages orphelins (Phase 6)
+
+Règle métier : **1 pointage = 1 jour calendaire**. Quand un worker scanne un nouveau jour avec un record d'un jour précédent encore ouvert (`departure IS NULL`), `closeOrphanPointages(workerId)` (api.js) clôture automatiquement le record orphelin avant que la state machine ne tourne. Évite le 409 "Aucun pointage ouvert pour aujourd'hui" observé en prod (cas Aymen pointé 22:54 → scan le lendemain 00:25 refusé).
+
+Appelée en début de `POST /api/clock` ET `POST /api/auth/rfid` (après lookup worker + pin_locked check, avant issue session). Dans le flux RFID, /api/auth/rfid re-SELECTionne `last_clock_state` après le cleanup pour renvoyer la valeur fraîche au borne — qui pourra alors envoyer la bonne action (`arrival`) au /api/clock qui suit. L'appel défensif dans /api/clock est no-op pour le flux RFID (déjà nettoyé) mais utile pour le flux PIN.
+
+Calcul du `departure` auto : `arrival + (sched_out - sched_in)` minutes, modulo 24h pour gérer les horaires de nuit (sched_out < sched_in). Fallback **480 minutes (8h)** si schedule manquant ou invalide. Stocké en HH:MM sur le record original (la `date` reste celle de l'arrivée — pas d'invention de date différente). Si un break était ouvert, il est aussi clôturé : `break_end = break_start + 30min`.
+
+Trace : event `pointage_orphan_closed` dans `security_events` avec `details = {worker_id, orphan_record_id, orphan_record_date, original_arrival_hhmm, auto_departure_hhmm, days_late, had_open_break, reason: 'auto_close_on_new_day'}`. L'admin peut consulter dans le journal pour corriger les heures de départ approximatives si l'estimation théorique ne colle pas. Cas multi-jours (très rare) : 1 cleanup par scan, les jours antérieurs se nettoient aux scans suivants.
+
+Limitation V1 documentée plus haut : le calcul `(sched_out - sched_in + 1440) % 1440` gère correctement les horaires de nuit modernes mais pas les workers en horaires décalés très exotiques. Acceptable pour la flotte actuelle (CDI 09–17, intérimaires 09–18).
+
 ## Conventions when editing
 
 - Prefer ES5-style `var` + `function` in both files — that's what the existing code uses and there's no transpile step for the function (esbuild will accept modern syntax, but the frontend runs as-is in browsers and matches the function style).
