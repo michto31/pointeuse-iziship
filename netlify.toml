@@ -10,3 +10,11 @@
   from = "/api/*"
   to = "/.netlify/functions/api/:splat"
   status = 200
+
+# Borne RFID plein écran (Phase 6) — sert le SPA depuis /borne pour que
+# le routing client puisse détecter pathname === '/borne' et basculer
+# en mode borne. Le station_token transite en query string.
+[[redirects]]
+  from = "/borne"
+  to = "/index.html"
+  status = 200

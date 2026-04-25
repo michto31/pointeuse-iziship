@@ -81,11 +81,36 @@ Colonne `workers.rfid_uid` (nullable) : UID EM4100 en ASCII hex uppercase (10 ch
 Routes Phase 6 :
 - `POST /api/workers/:id/rfid` [admin] — body `{uid}`, regex `/^[0-9A-F]{10}$/`. 404 worker, 409 si UID déjà pris. Log `rfid_enroll` avec `uid_prefix` masqué.
 - `DELETE /api/workers/:id/rfid` [admin] — 404 si pas de carte associée. Log `rfid_unenroll`.
-- `POST /api/auth/rfid` [PUBLIC, rate-limited **10/min/IP bucket `rfid_auth`**] — body `{uid, station_token}`. Valide station → 401. Lookup worker → 404 et log `rfid_unknown_card` **avec UID complet en clair** (intentionnel, sert à l'enrôlement à chaud futur depuis le journal). `pin_locked` bloque RFID aussi → 423 + log `rfid_locked_card`. Succès : issue session worker 16h + log `rfid_clock` + return `{token, expires_at, worker:{id, name, last_clock_state}}`. Le rate-limit 429 ne log PAS d'event (sinon DoS = spam journal).
+- `POST /api/auth/rfid` [PUBLIC, rate-limited **10/min/IP bucket `rfid_auth`**] — body `{uid, station_token}`. Valide station → 401. Lookup worker → 404 et log `rfid_unknown_card` **avec UID complet en clair** (intentionnel, sert à l'enrôlement à chaud futur depuis le journal). `pin_locked` bloque RFID aussi → 423 + log `rfid_locked_card`. Succès : issue session worker 16h + log `rfid_clock` + return `{token, expires_at, worker:{id, name, last_clock_state, sched_out}}`. Le `sched_out` est exposé uniquement après auth carte+station valides (pas dans `/api/public/worker-names` qui reste minimal) et sert à l'heuristique côté borne pour décider `break_start` vs `departure` quand l'état worker est `at_work`. Le rate-limit 429 ne log PAS d'event (sinon DoS = spam journal).
 
 Types `security_events` ajoutés (6) : `rfid_enroll`, `rfid_unenroll`, `rfid_clock`, `rfid_unknown_card`, `rfid_locked_card`, `rfid_station_invalid`. Constante `SECURITY_EVENT_TYPES` côté `api.js` reste la source de vérité (event_type DB est TEXT libre, pas de CHECK).
 
 Règle stricte sur les logs RFID : `uid_prefix = uid.substring(0,4) + "***"` partout SAUF dans `rfid_unknown_card.details.uid` qui reçoit l'UID complet (réservé à ce flux d'enrôlement à chaud). `checkRateLimit(event, N, bucket)` accepte un 3e argument optionnel pour isoler les seuils par endpoint — sans `bucket` on garde le comportement historique (clé = IP seule).
+
+### Page borne plein écran (Phase 6 étape 3)
+
+URL `/borne?station_token=XXX` (ou `/?mode=borne&station_token=XXX`) sert un mode plein écran isolé du flux admin/punch mobile. Détection au boot via `BORNE_MODE` (1re ligne du `<script>`) qui ajoute `body.borne-mode` et fait skip toute la startup admin/punch. Netlify redirect `/borne → /index.html` dans `netlify.toml` permet le routing path-based ; `?mode=borne` marche sans redirect.
+
+Cycle d'écran : `boot` (clic obligatoire pour user-gesture Web Serial + AudioContext) → `idle` (en attente carte, horloge live) → `recognized` (fond vert, "Bonjour {Prénom} ! {Action} enregistré(e) à {HH:MM}", beep 880Hz/100ms) → retour `idle` après 3s. Erreurs : `error` (fond rouge, beep 220Hz/200ms) → retour `idle` après 4s. Cas spécial `misconfig` plein écran si `station_token` absent.
+
+Heuristique d'action côté borne (module `borne` en fin de `<script>`) :
+- `last_clock_state === 'idle'` → `arrival`
+- `last_clock_state === 'on_break'` → `break_end`
+- `last_clock_state === 'at_work'` :
+  - si `nowMinutes >= schedOutMinutes - 15` → `departure`
+  - sinon → `break_start`
+
+Limitation V1 : workers en horaires décalés passant minuit (ex. 22:00–06:00) auront un calcul incorrect (l'arithmétique `hh*60+mm` ne gère pas le wrap). Acceptable pour journée standard 09h–17h. Une refonte demande sched_in + jours de travail + timezone côté worker.
+
+Anti-double-read : `RFID_DEDUP_MS = 2000ms` constante en tête du module — le lecteur Parallax retransmet la trame en boucle tant que la carte est présente, on ignore les répétitions du même UID dans cette fenêtre.
+
+Persistance Web Serial : `navigator.serial.getPorts()` retourne le port précédemment autorisé pour cette origine. Au 1er boot l'admin clique "Démarrer" et choisit le port via le picker OS. Aux reloads suivants, `getPorts()` renvoie le port direct, pas de picker — mais le bouton "Démarrer" reste obligatoire (user-gesture pour AudioContext).
+
+Wake lock : `navigator.wakeLock.request('screen')` empêche la mise en veille pendant la session borne. Silencieux si l'API n'est pas disponible (Safari < iPadOS 16.4).
+
+Heartbeat : `setInterval` 60s sur `POST /api/init` pour garder le Mac actif côté réseau et la function Netlify warm.
+
+Disconnect handling : `navigator.serial.addEventListener('disconnect',...)` détecte le débranchement USB → état `error` "Lecteur déconnecté". À la reconnexion (`connect` event), tente automatiquement `getPorts()` + `borneOpenPort()` pour reprendre.
 
 ## Conventions when editing
 

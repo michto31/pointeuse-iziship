@@ -251,6 +251,40 @@ tr:hover td{background:#FAFBFD}
 .rfid-worker-section{padding:12px 20px 0;display:flex;flex-direction:column;gap:8px}
 .rfid-badge-ok{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;background:var(--green-light);color:var(--green);border-radius:6px;font-size:13px;font-weight:600}
 
+/* ═══ Borne RFID plein écran (Phase 6) ═══ */
+body.borne-mode{overflow:hidden;height:100vh}
+.borne-screen{position:fixed;inset:0;z-index:9999;background:#fff;overflow:hidden}
+.borne-state{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;animation:borneFadeIn 200ms ease-out}
+.borne-state[hidden]{display:none !important}
+@keyframes borneFadeIn{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:scale(1)}}
+
+.borne-logo-tl{position:absolute;top:24px;left:32px;font-weight:700;color:var(--text2);font-size:18px;letter-spacing:.5px}
+
+.borne-boot-inner{display:flex;flex-direction:column;align-items:center;gap:18px;max-width:520px;text-align:center}
+.borne-boot-title{margin:0;font-size:48px;font-weight:700;color:var(--text)}
+.borne-boot-sub{margin:0;font-size:18px;color:var(--text2);line-height:1.4}
+.borne-boot-meta{margin:8px 0 0;font-size:13px;color:var(--text3);min-height:1.2em}
+.borne-btn-primary{font-size:24px;padding:18px 48px;background:var(--accent);color:#fff;border:none;border-radius:12px;cursor:pointer;font-weight:600;transition:all .15s}
+.borne-btn-primary:hover{background:var(--accent-hover);box-shadow:var(--shadow)}
+
+.borne-idle-prompt{font-size:80px;font-weight:700;color:var(--text);text-align:center;line-height:1.1}
+.borne-clock{font-size:48px;font-family:JetBrains Mono,monospace;color:var(--text2);margin-top:32px;letter-spacing:4px}
+.borne-status-led{position:absolute;bottom:20px;left:24px;font-size:13px;color:var(--text3);font-weight:500}
+.borne-status-led.disconnected{color:var(--red)}
+
+.borne-state-recognized{background:var(--green-light)}
+.borne-success-greet{font-size:96px;font-weight:800;color:var(--green);text-align:center;line-height:1.1}
+.borne-success-action{font-size:36px;color:var(--green);margin-top:16px;text-align:center}
+
+.borne-state-error{background:#fee2e2}
+.borne-error-icon{font-size:80px;margin-bottom:16px;line-height:1}
+.borne-error-msg{font-size:48px;color:var(--red);font-weight:600;text-align:center;max-width:80%;line-height:1.2}
+.borne-error-sub{font-size:18px;color:var(--text2);margin-top:16px;text-align:center;max-width:70%}
+
+.borne-state-misconfig{background:#fef3c7}
+.borne-state-misconfig .borne-error-msg{color:#92400e}
+.borne-state-misconfig code{font-family:JetBrains Mono,monospace;background:#fde68a;padding:2px 6px;border-radius:4px;color:#92400e}
+
 .punch-loading{text-align:center;color:var(--text3);padding:40px;font-size:14px;grid-column:1 / -1}
 
 .punch-b-inner,.punch-c-inner,.punch-d-inner,.punch-e-inner{max-width:520px;margin:0 auto;width:100%;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px}
@@ -811,7 +845,53 @@ Bonjour ! Je suis votre assistant RH. Je peux analyser vos donn&#233;es de point
 </div>
 </div></div>
 
+<!-- ═══ BORNE RFID plein &eacute;cran (Phase 6) ═══ -->
+<!-- Affich&eacute;e uniquement si BORNE_MODE d&eacute;tect&eacute; au boot     -->
+<!-- (location.pathname === '/borne' OU ?mode=borne).                  -->
+<section id="borneScreen" class="borne-screen" hidden>
+<div class="borne-state borne-state-boot">
+<div class="borne-logo-tl">IziShip</div>
+<div class="borne-boot-inner">
+<h1 class="borne-boot-title">Borne de pointage</h1>
+<p class="borne-boot-sub">Connectez le lecteur RFID au Mac, puis cliquez ci-dessous.</p>
+<button class="borne-btn-primary" type="button" data-action="borne-start">D&eacute;marrer la borne</button>
+<p class="borne-boot-meta" id="borneBootMeta"></p>
+</div>
+</div>
+
+<div class="borne-state borne-state-idle" hidden>
+<div class="borne-logo-tl">IziShip</div>
+<div class="borne-idle-prompt">Passez votre carte</div>
+<div class="borne-clock" id="borneClock">--:--:--</div>
+<div class="borne-status-led" id="borneStatusLed">&bull;&nbsp;Lecteur connect&eacute;</div>
+</div>
+
+<div class="borne-state borne-state-recognized" hidden>
+<div class="borne-success-greet" id="borneRecogGreet">Bonjour</div>
+<div class="borne-success-action" id="borneRecogAction"></div>
+</div>
+
+<div class="borne-state borne-state-error" hidden>
+<div class="borne-error-icon">&#9888;</div>
+<div class="borne-error-msg" id="borneErrorMsg">Erreur</div>
+<div class="borne-error-sub" id="borneErrorSub"></div>
+</div>
+
+<div class="borne-state borne-state-misconfig" hidden>
+<div class="borne-error-icon">&#128295;</div>
+<div class="borne-error-msg">Borne non configur&eacute;e &mdash; appelez l'admin</div>
+<div class="borne-error-sub">URL incompl&egrave;te&nbsp;: param&egrave;tre <code>station_token</code> manquant.</div>
+</div>
+</section>
+
 <script>
+// ═══ DÉTECTION BORNE RFID (Phase 6) ═══
+// Doit être en tête : la page borne plein écran skip TOUS les autres flows
+// (admin, punch mobile, employee). Le module borne en fin de script lit
+// BORNE_MODE pour décider d'initialiser.
+var BORNE_MODE=(location.pathname==='/borne')||((new URLSearchParams(location.search).get('mode'))==='borne');
+if(BORNE_MODE)document.body.classList.add('borne-mode');
+
 // ═══ AUTH SYSTEM ═══
 var SESSION_KEY='pointeuse_session';
 var TOKEN_KEY='pointeuse_token';
@@ -3344,6 +3424,14 @@ document.addEventListener('DOMContentLoaded',function(){
 
 // ═══ STARTUP ═══
 (async function startup(){
+  // Phase 6 — mode borne RFID : skip toute l'init admin/punch/employee, montre
+  // uniquement #borneScreen et délègue à initBorne(). Le module borne est défini
+  // plus bas dans le script (function declaration hoisted, OK d'appeler ici).
+  if(BORNE_MODE){
+    document.getElementById('borneScreen').hidden=false;
+    initBorne();
+    return;
+  }
   // Token admin expiré/près de l'être → clear avant tout call API (défend Phase 1).
   if(getToken() && tokenIsExpiringSoon()){
     clearToken();
@@ -3402,6 +3490,429 @@ document.getElementById('rfidAssocModal').addEventListener('click',function(e){
   else if(act==='rfid-connect')rfidConnect();
   else if(act==='rfid-confirm')rfidConfirm();
 });
+
+// ═══ BORNE RFID — module plein écran (Phase 6 étape 3) ═══
+// Activé uniquement si BORNE_MODE === true (cf détection top-of-script).
+// Cycle : boot → idle → recognized → idle (ou error → idle).
+// Persistance Web Serial : navigator.serial.getPorts() permet d'auto-rouvrir
+// le port si l'admin a déjà autorisé une fois. AudioContext requiert un
+// user-gesture initial (clic "Démarrer") — donc même avec port persisté on
+// affiche le boot screen au premier chargement de la session.
+
+var BORNE_STATE='boot';
+var bornePort=null;
+var borneReader=null;
+var borneAudioCtx=null;
+var borneLastUid=null;
+var borneLastUidAt=0;
+var borneClockTimer=null;
+var borneHeartbeatTimer=null;
+var borneStateBackTimer=null;
+var borneRfidBuf='';
+var borneInitOnce=false;
+
+// Constantes
+var RFID_DEDUP_MS=2000;
+var BORNE_RECOGNIZED_MS=3000;
+var BORNE_ERROR_MS=4000;
+var BORNE_HEARTBEAT_MS=60000;
+var BORNE_AUTH_TIMEOUT_MS=8000;
+var BORNE_CLOCK_TIMEOUT_MS=8000;
+var DEPARTURE_WINDOW_MIN=15;
+var ACTION_LABELS={
+  arrival:'Arriv\u00e9e',
+  break_start:'D\u00e9but de pause',
+  break_end:'Retour de pause',
+  departure:'D\u00e9part'
+};
+
+function borneStationToken(){
+  return new URLSearchParams(location.search).get('station_token')||'';
+}
+
+function initBorne(){
+  if(borneInitOnce)return;
+  borneInitOnce=true;
+  if(!borneStationToken()){
+    borneShowState('misconfig');
+    return;
+  }
+  borneShowState('boot');
+  borneStartClock();
+  borneStartHeartbeat();
+  // Listeners disconnect/connect — le navigateur émet ces events sur navigator.serial
+  if(navigator.serial){
+    navigator.serial.addEventListener('disconnect',borneOnDisconnect);
+    navigator.serial.addEventListener('connect',borneOnReconnect);
+  }
+  // Tente une auto-start si un port est déjà autorisé. Mais on garde le boot
+  // screen visible : le bouton "Démarrer" reste obligatoire pour user-gesture
+  // (AudioContext + parfois reopen sur certains OS).
+  borneCheckSavedPort();
+}
+
+async function borneCheckSavedPort(){
+  if(!navigator.serial)return;
+  try{
+    var ports=await navigator.serial.getPorts();
+    var meta=document.getElementById('borneBootMeta');
+    if(ports && ports.length>0){
+      if(meta)meta.textContent='Lecteur d\u00e9j\u00e0 autoris\u00e9 \u2014 cliquez D\u00e9marrer pour relancer la session.';
+    }else{
+      if(meta)meta.textContent='Aucun lecteur autoris\u00e9. Premi\u00e8re utilisation : Chrome demandera la permission.';
+    }
+  }catch(e){}
+}
+
+async function borneStart(){
+  if(!navigator.serial){
+    borneShowError('Web Serial non support\u00e9','Utilisez Chrome ou Edge.');
+    return;
+  }
+  borneEnsureAudio();
+  borneAcquireWakeLock();
+  // 1) Tente getPorts() pour port persisté ; sinon requestPort() avec picker.
+  var port=null;
+  try{
+    var saved=await navigator.serial.getPorts();
+    if(saved && saved.length>0){
+      port=saved[0];
+    }else{
+      port=await navigator.serial.requestPort();
+    }
+  }catch(e){
+    if(e && e.name==='NotFoundError'){
+      borneShowError('Aucun port s\u00e9lectionn\u00e9','Cliquez D\u00e9marrer puis choisissez le lecteur.');
+      borneBackTo('boot',BORNE_ERROR_MS);
+      return;
+    }
+    if(e && e.name==='SecurityError'){
+      borneShowError('HTTPS requis','La borne doit \u00eatre servie sur https://');
+      return;
+    }
+    borneShowError('Erreur acc\u00e8s port',e.message||e.name||'inconnue');
+    borneBackTo('boot',BORNE_ERROR_MS);
+    return;
+  }
+  await borneOpenPort(port);
+}
+
+async function borneOpenPort(port){
+  try{
+    await port.open({baudRate:2400,dataBits:8,stopBits:1,parity:'none'});
+    await port.setSignals({dataTerminalReady:true});
+  }catch(e){
+    // Port peut être déjà ouvert (reload après autorisation). On tente quand même
+    // de continuer — l'erreur "InvalidStateError: port already open" est récupérable.
+    if(e && e.name!=='InvalidStateError'){
+      borneShowError('Erreur ouverture port',e.message||'inconnue');
+      borneBackTo('boot',BORNE_ERROR_MS);
+      return;
+    }
+  }
+  bornePort=port;
+  borneSetStatusLed(true);
+  borneShowState('idle');
+  borneStartReadLoop();
+}
+
+function borneStartReadLoop(){
+  if(!bornePort || !bornePort.readable)return;
+  borneRfidBuf='';
+  try{borneReader=bornePort.readable.getReader();}
+  catch(e){borneShowError('Lecteur occup\u00e9',e.message||'inconnu');return;}
+  (async function(){
+    var dec=new TextDecoder('ascii');
+    try{
+      while(true){
+        var r=await borneReader.read();
+        if(r.done)break;
+        borneRfidBuf+=dec.decode(r.value);
+        // Plusieurs trames possibles dans le buffer si lecture rapide
+        var m;
+        while((m=borneRfidBuf.match(/\n([0-9A-F]{10})\r/))!==null){
+          borneRfidBuf=borneRfidBuf.substring(m.index+m[0].length);
+          borneHandleUid(m[1]);
+        }
+        // Limite buffer pour ne pas accumuler indéfiniment des bytes parasites
+        if(borneRfidBuf.length>256)borneRfidBuf=borneRfidBuf.substring(borneRfidBuf.length-32);
+      }
+    }catch(e){
+      // Reader cancelled (déconnexion ou cleanup) — silencieux
+    }
+  })();
+}
+
+async function borneStopReadLoop(){
+  if(borneReader){try{await borneReader.cancel();}catch(e){}try{borneReader.releaseLock();}catch(e){}borneReader=null;}
+}
+
+function borneOnDisconnect(e){
+  if(e && e.target===bornePort){
+    bornePort=null;
+    borneStopReadLoop();
+    borneSetStatusLed(false);
+    borneShowError('Lecteur d\u00e9connect\u00e9','Rebrancher l\'USB pour continuer.');
+  }
+}
+
+async function borneOnReconnect(e){
+  // Si on est en error parce que déconnecté, on tente de réutiliser le port persisté
+  if(BORNE_STATE==='error' && bornePort===null){
+    try{
+      var ports=await navigator.serial.getPorts();
+      if(ports && ports.length>0){
+        await borneOpenPort(ports[0]);
+      }
+    }catch(err){}
+  }
+}
+
+function borneSetStatusLed(connected){
+  var led=document.getElementById('borneStatusLed');
+  if(!led)return;
+  if(connected){
+    led.textContent='\u2022\u00a0Lecteur connect\u00e9';
+    led.classList.remove('disconnected');
+  }else{
+    led.textContent='\u26a0\u00a0Lecteur d\u00e9connect\u00e9';
+    led.classList.add('disconnected');
+  }
+}
+
+async function borneHandleUid(uid){
+  // Anti-double-read : on ignore les répétitions rapprochées du même UID.
+  var now=Date.now();
+  if(uid===borneLastUid && (now-borneLastUidAt)<RFID_DEDUP_MS)return;
+  borneLastUid=uid;
+  borneLastUidAt=now;
+  // Pendant le traitement, on bloque tout autre UID (sauf après dedup)
+  // en passant temporairement en state 'recognized' ou 'error'. Le read loop
+  // continue mais handleUid skip via dedup.
+  await borneProcessScan(uid);
+}
+
+async function borneProcessScan(uid){
+  var auth;
+  try{
+    auth=await borneAuthRfid(uid);
+  }catch(e){
+    if(e && e.status===404){
+      borneBeepError();
+      borneShowError('Carte inconnue','Voir l\'admin pour l\'enr\u00f4ler.');
+      borneBackTo('idle',BORNE_ERROR_MS);
+      return;
+    }
+    if(e && e.status===423){
+      borneBeepError();
+      borneShowError('Carte verrouill\u00e9e','PIN bloqu\u00e9 \u2014 voir admin.');
+      borneBackTo('idle',BORNE_ERROR_MS);
+      return;
+    }
+    if(e && e.status===401){
+      borneBeepError();
+      borneShowError('Station invalide','Token p\u00e9rim\u00e9 \u2014 appelez l\'admin.');
+      borneBackTo('idle',BORNE_ERROR_MS);
+      return;
+    }
+    borneBeepError();
+    borneShowError('Erreur r\u00e9seau',(e && e.message)||'connexion impossible');
+    borneBackTo('idle',BORNE_ERROR_MS);
+    return;
+  }
+  // Décide de l'action selon l'état + sched_out
+  var action=borneDecideAction(auth.worker.last_clock_state,auth.worker.sched_out);
+  // POST /api/clock avec le token worker
+  var clockResp;
+  try{
+    clockResp=await borneClock(auth.token,action);
+  }catch(e){
+    borneBeepError();
+    if(e && e.status===409){
+      borneShowError('Action impossible',(e && e.message)||'\u00c9tat actuel ne permet pas '+action);
+    }else{
+      borneShowError('Erreur pointage',(e && e.message)||'inconnue');
+    }
+    // Logout best-effort puis retour idle
+    borneLogout(auth.token);
+    borneBackTo('idle',BORNE_ERROR_MS);
+    return;
+  }
+  // Succès : affiche, beep, logout, back to idle
+  borneShowState('recognized',{name:auth.worker.name,action:clockResp.action||action,time:clockResp.time||''});
+  borneBeep();
+  borneLogout(auth.token);
+  borneBackTo('idle',BORNE_RECOGNIZED_MS);
+}
+
+function borneDecideAction(state,schedOut){
+  if(state==='idle')return 'arrival';
+  if(state==='on_break')return 'break_end';
+  if(state==='at_work'){
+    // Heuristique : si on est dans la fenêtre [schedOut - 15min, +∞[ → départ.
+    // Sinon → break_start. Attention horaires décalés non gérés (cf doc CLAUDE.md).
+    var now=new Date();
+    var nowMin=now.getHours()*60+now.getMinutes();
+    var schedMin=borneParseHHMM(schedOut);
+    if(schedMin!==null && nowMin>=schedMin-DEPARTURE_WINDOW_MIN)return 'departure';
+    return 'break_start';
+  }
+  // Fallback défensif : tente arrival, le serveur refusera si invalide
+  return 'arrival';
+}
+
+function borneParseHHMM(s){
+  if(!s||typeof s!=='string')return null;
+  var p=s.split(':');
+  if(p.length!==2)return null;
+  var h=parseInt(p[0],10);
+  var m=parseInt(p[1],10);
+  if(isNaN(h)||isNaN(m))return null;
+  return h*60+m;
+}
+
+async function borneAuthRfid(uid){
+  return await borneApiCall('POST','/api/auth/rfid',null,{uid:uid,station_token:borneStationToken()},BORNE_AUTH_TIMEOUT_MS);
+}
+
+async function borneClock(token,action){
+  return await borneApiCall('POST','/api/clock',token,{action:action,station_token:borneStationToken()},BORNE_CLOCK_TIMEOUT_MS);
+}
+
+async function borneLogout(token){
+  // Fire-and-forget, on ne bloque pas l'UI là-dessus
+  try{await borneApiCall('POST','/api/auth/logout',token,{},3000);}catch(e){}
+}
+
+async function borneApiCall(method,path,token,body,timeoutMs){
+  var ctrl=null;
+  try{ctrl=new AbortController();}catch(e){}
+  var t=null;
+  if(ctrl)t=setTimeout(function(){ctrl.abort();},timeoutMs||BORNE_AUTH_TIMEOUT_MS);
+  var headers={'Content-Type':'application/json'};
+  if(token)headers['Authorization']='Bearer '+token;
+  var opts={method:method,headers:headers,body:JSON.stringify(body||{})};
+  if(ctrl)opts.signal=ctrl.signal;
+  var res;
+  try{res=await fetch(path,opts);}
+  finally{if(t)clearTimeout(t);}
+  var data;
+  try{data=await res.json();}catch(e){data={};}
+  if(!res.ok){
+    var err=new Error(data && data.error?data.error:'HTTP '+res.status);
+    err.status=res.status;
+    err.body=data;
+    throw err;
+  }
+  return data;
+}
+
+function borneShowState(state,payload){
+  BORNE_STATE=state;
+  if(borneStateBackTimer){clearTimeout(borneStateBackTimer);borneStateBackTimer=null;}
+  var screen=document.getElementById('borneScreen');
+  if(!screen)return;
+  screen.querySelectorAll('.borne-state').forEach(function(el){
+    el.hidden=!el.classList.contains('borne-state-'+state);
+  });
+  if(state==='recognized' && payload){
+    var greet=document.getElementById('borneRecogGreet');
+    var act=document.getElementById('borneRecogAction');
+    if(greet)greet.textContent='Bonjour '+(payload.name||'')+' !';
+    if(act){
+      var label=ACTION_LABELS[payload.action]||payload.action||'';
+      var time=payload.time?(' \u00e0 '+payload.time):'';
+      act.textContent=label?label+' enregistr\u00e9'+(payload.action==='arrival'||payload.action==='departure'?'e':'')+time:time;
+    }
+  }
+}
+
+function borneShowError(msg,sub){
+  var el=document.getElementById('borneErrorMsg');
+  if(el)el.textContent=msg||'Erreur';
+  var s=document.getElementById('borneErrorSub');
+  if(s)s.textContent=sub||'';
+  borneShowState('error');
+}
+
+function borneBackTo(state,delayMs){
+  if(borneStateBackTimer)clearTimeout(borneStateBackTimer);
+  borneStateBackTimer=setTimeout(function(){
+    // Si on est passé à un autre état entre-temps, ne rien faire
+    if(state==='idle')borneShowState('idle');
+    else if(state==='boot')borneShowState('boot');
+  },delayMs||BORNE_RECOGNIZED_MS);
+}
+
+function borneEnsureAudio(){
+  if(borneAudioCtx)return;
+  try{
+    var Ctx=window.AudioContext||window.webkitAudioContext;
+    if(Ctx)borneAudioCtx=new Ctx();
+  }catch(e){borneAudioCtx=null;}
+}
+
+function borneBeepTone(freq,durMs,vol){
+  if(!borneAudioCtx)return;
+  try{
+    var osc=borneAudioCtx.createOscillator();
+    var gain=borneAudioCtx.createGain();
+    osc.frequency.value=freq;
+    osc.type='sine';
+    gain.gain.value=vol;
+    osc.connect(gain);
+    gain.connect(borneAudioCtx.destination);
+    osc.start();
+    setTimeout(function(){try{osc.stop();}catch(e){}},durMs);
+  }catch(e){}
+}
+
+function borneBeep(){borneBeepTone(880,100,0.15);}
+function borneBeepError(){borneBeepTone(220,200,0.15);}
+
+async function borneAcquireWakeLock(){
+  if(!('wakeLock' in navigator))return;
+  try{
+    var wl=await navigator.wakeLock.request('screen');
+    document.addEventListener('visibilitychange',function(){
+      if(document.visibilityState==='visible' && wl.released){
+        // Wake lock released par l'OS quand l'onglet a perdu le focus, on ré-acquiert
+        borneAcquireWakeLock();
+      }
+    });
+  }catch(e){/* silencieux */}
+}
+
+function borneStartClock(){
+  if(borneClockTimer)return;
+  function tick(){
+    var d=new Date();
+    var hh=String(d.getHours()).padStart(2,'0');
+    var mm=String(d.getMinutes()).padStart(2,'0');
+    var ss=String(d.getSeconds()).padStart(2,'0');
+    var el=document.getElementById('borneClock');
+    if(el)el.textContent=hh+':'+mm+':'+ss;
+  }
+  tick();
+  borneClockTimer=setInterval(tick,1000);
+}
+
+function borneStartHeartbeat(){
+  if(borneHeartbeatTimer)return;
+  borneHeartbeatTimer=setInterval(function(){
+    fetch('/api/init',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).catch(function(){});
+  },BORNE_HEARTBEAT_MS);
+}
+
+// Event delegation pour le bouton "Démarrer la borne"
+if(document.getElementById('borneScreen')){
+  document.getElementById('borneScreen').addEventListener('click',function(e){
+    var b=e.target.closest('button[data-action]');
+    if(!b)return;
+    if(b.getAttribute('data-action')==='borne-start')borneStart();
+  });
+}
+
 
 // ═══ QR CODE GENERATOR (POSTES) ═══
 // Postes: managed by API data layer (loadPostes = _postesCache)
