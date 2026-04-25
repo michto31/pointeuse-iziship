@@ -875,6 +875,7 @@ Bonjour ! Je suis votre assistant RH. Je peux analyser vos donn&#233;es de point
 <div class="borne-error-icon">&#9888;</div>
 <div class="borne-error-msg" id="borneErrorMsg">Erreur</div>
 <div class="borne-error-sub" id="borneErrorSub"></div>
+<button class="borne-btn-primary" type="button" id="borneRetryBtn" data-action="borne-retry" style="margin-top:24px;display:none;">R&eacute;essayer</button>
 </div>
 
 <div class="borne-state borne-state-misconfig" hidden>
@@ -910,6 +911,7 @@ var borneHeartbeatTimer=null;
 var borneStateBackTimer=null;
 var borneRfidBuf='';
 var borneInitOnce=false;
+var borneStarting=false;
 var RFID_DEDUP_MS=2000;
 var BORNE_RECOGNIZED_MS=3000;
 var BORNE_ERROR_MS=4000;
@@ -3572,51 +3574,77 @@ async function borneCheckSavedPort(){
 }
 
 async function borneStart(){
-  if(!navigator.serial){
-    borneShowError('Web Serial non support\u00e9','Utilisez Chrome ou Edge.');
-    return;
-  }
-  borneEnsureAudio();
-  borneAcquireWakeLock();
-  // 1) Tente getPorts() pour port persisté ; sinon requestPort() avec picker.
-  var port=null;
+  if(borneStarting)return;
+  borneStarting=true;
   try{
-    var saved=await navigator.serial.getPorts();
-    if(saved && saved.length>0){
-      port=saved[0];
-    }else{
-      port=await navigator.serial.requestPort();
-    }
-  }catch(e){
-    if(e && e.name==='NotFoundError'){
-      borneShowError('Aucun port s\u00e9lectionn\u00e9','Cliquez D\u00e9marrer puis choisissez le lecteur.');
-      borneBackTo('boot',BORNE_ERROR_MS);
+    if(!navigator.serial){
+      borneShowError('Web Serial non support\u00e9','Utilisez Chrome ou Edge.','port_recoverable');
       return;
     }
-    if(e && e.name==='SecurityError'){
-      borneShowError('HTTPS requis','La borne doit \u00eatre servie sur https://');
+    borneEnsureAudio();
+    borneAcquireWakeLock();
+    // 1) Tente getPorts() pour port persisté ; sinon requestPort() avec picker.
+    var port=null;
+    try{
+      var saved=await navigator.serial.getPorts();
+      if(saved && saved.length>0){
+        port=saved[0];
+      }else{
+        port=await navigator.serial.requestPort();
+      }
+    }catch(e){
+      if(e && e.name==='NotFoundError'){
+        borneShowError('Aucun port s\u00e9lectionn\u00e9','Cliquez R\u00e9essayer puis choisissez le lecteur.','port_recoverable');
+        return;
+      }
+      if(e && e.name==='SecurityError'){
+        borneShowError('HTTPS requis','La borne doit \u00eatre servie sur https://','port_recoverable');
+        return;
+      }
+      borneShowError('Erreur acc\u00e8s port',e.message||e.name||'inconnue','port_recoverable');
       return;
     }
-    borneShowError('Erreur acc\u00e8s port',e.message||e.name||'inconnue');
-    borneBackTo('boot',BORNE_ERROR_MS);
-    return;
+    await borneOpenPort(port);
+  }finally{
+    borneStarting=false;
   }
-  await borneOpenPort(port);
 }
 
 async function borneOpenPort(port){
+  // Idempotence : si on tient déjà CE port avec un reader actif, no-op (afficher idle).
+  // Si on tient un autre port (ou ce port sans reader), on ferme proprement avant reopen.
+  if(bornePort){
+    if(bornePort===port && borneReader){
+      borneSetStatusLed(true);
+      borneShowState('idle');
+      return;
+    }
+    await borneClosePort();
+  }
   try{
     await port.open({baudRate:2400,dataBits:8,stopBits:1,parity:'none'});
-    await port.setSignals({dataTerminalReady:true});
   }catch(e){
-    // Port peut être déjà ouvert (reload après autorisation). On tente quand même
-    // de continuer — l'erreur "InvalidStateError: port already open" est récupérable.
-    if(e && e.name!=='InvalidStateError'){
-      borneShowError('Erreur ouverture port',e.message||'inconnue');
-      borneBackTo('boot',BORNE_ERROR_MS);
+    if(e && e.name==='InvalidStateError'){
+      // Port marqué ouvert côté Chrome mais notre ref est perdue (reload race).
+      // On tente 1 close + 1 retry. Si ça rate à nouveau → message friendly.
+      try{await port.close();}catch(_e){}
+      try{
+        await port.open({baudRate:2400,dataBits:8,stopBits:1,parity:'none'});
+      }catch(e2){
+        borneShowError('Lecteur occup\u00e9','D\u00e9branchez et rebranchez le lecteur, puis r\u00e9essayez.','port_recoverable');
+        return;
+      }
+    }else if(/open serial port/i.test(String((e && e.message)||''))){
+      borneShowError('Lecteur occup\u00e9','D\u00e9branchez et rebranchez le lecteur, puis r\u00e9essayez.','port_recoverable');
+      return;
+    }else{
+      borneShowError('Erreur ouverture port',(e && e.message)||'inconnue','port_recoverable');
       return;
     }
   }
+  // setSignals hors du catch : DTR=True doit toujours être appliqué quand le port est ouvert,
+  // y compris dans le path InvalidStateError-then-close-and-retry.
+  try{await port.setSignals({dataTerminalReady:true});}catch(e){/* DTR best-effort */}
   bornePort=port;
   borneSetStatusLed(true);
   borneShowState('idle');
@@ -3627,7 +3655,7 @@ function borneStartReadLoop(){
   if(!bornePort || !bornePort.readable)return;
   borneRfidBuf='';
   try{borneReader=bornePort.readable.getReader();}
-  catch(e){borneShowError('Lecteur occup\u00e9',e.message||'inconnu');return;}
+  catch(e){borneShowError('Lecteur occup\u00e9','D\u00e9branchez et rebranchez le lecteur, puis r\u00e9essayez.','port_recoverable');return;}
   (async function(){
     var dec=new TextDecoder('ascii');
     try{
@@ -3650,16 +3678,27 @@ function borneStartReadLoop(){
   })();
 }
 
-async function borneStopReadLoop(){
-  if(borneReader){try{await borneReader.cancel();}catch(e){}try{borneReader.releaseLock();}catch(e){}borneReader=null;}
+// Cleanup propre : cancel reader + releaseLock + close port + null toutes les refs.
+// Remplace l'ancien borneStopReadLoop qui ne fermait pas le port (cause des handles
+// accumulés observés via lsof).
+async function borneClosePort(){
+  if(borneReader){
+    try{await borneReader.cancel();}catch(e){}
+    try{borneReader.releaseLock();}catch(e){}
+    borneReader=null;
+  }
+  if(bornePort){
+    try{await bornePort.close();}catch(e){}
+    bornePort=null;
+  }
+  borneRfidBuf='';
 }
 
-function borneOnDisconnect(e){
+async function borneOnDisconnect(e){
   if(e && e.target===bornePort){
-    bornePort=null;
-    borneStopReadLoop();
+    await borneClosePort();
     borneSetStatusLed(false);
-    borneShowError('Lecteur d\u00e9connect\u00e9','Rebrancher l\'USB pour continuer.');
+    borneShowError('Lecteur d\u00e9connect\u00e9','Rebranchez l\'USB pour reprendre. Reprise auto au branchement.','port_disconnected');
   }
 }
 
@@ -3673,6 +3712,13 @@ async function borneOnReconnect(e){
       }
     }catch(err){}
   }
+}
+
+async function borneRetry(){
+  // Reset complet du port avant nouveau start. Pas de showState('boot')
+  // intermédiaire — borneStart enchaîne directement vers idle (ou re-error).
+  await borneClosePort();
+  await borneStart();
 }
 
 function borneSetStatusLed(connected){
@@ -3704,27 +3750,18 @@ async function borneProcessScan(uid){
   try{
     auth=await borneAuthRfid(uid);
   }catch(e){
-    if(e && e.status===404){
-      borneBeepError();
-      borneShowError('Carte inconnue','Voir l\'admin pour l\'enr\u00f4ler.');
-      borneBackTo('idle',BORNE_ERROR_MS);
-      return;
-    }
-    if(e && e.status===423){
-      borneBeepError();
-      borneShowError('Carte verrouill\u00e9e','PIN bloqu\u00e9 \u2014 voir admin.');
-      borneBackTo('idle',BORNE_ERROR_MS);
-      return;
-    }
-    if(e && e.status===401){
-      borneBeepError();
-      borneShowError('Station invalide','Token p\u00e9rim\u00e9 \u2014 appelez l\'admin.');
-      borneBackTo('idle',BORNE_ERROR_MS);
-      return;
-    }
     borneBeepError();
-    borneShowError('Erreur r\u00e9seau',(e && e.message)||'connexion impossible');
-    borneBackTo('idle',BORNE_ERROR_MS);
+    // Tous ces cas sont 'transient' : borneShowError gère lui-même le timer
+    // auto-back à idle après BORNE_ERROR_MS.
+    if(e && e.status===404){
+      borneShowError('Carte inconnue','Voir l\'admin pour l\'enr\u00f4ler.','transient');
+    }else if(e && e.status===423){
+      borneShowError('Carte verrouill\u00e9e','PIN bloqu\u00e9 \u2014 voir admin.','transient');
+    }else if(e && e.status===401){
+      borneShowError('Station invalide','Token p\u00e9rim\u00e9 \u2014 appelez l\'admin.','transient');
+    }else{
+      borneShowError('Erreur r\u00e9seau',(e && e.message)||'connexion impossible','transient');
+    }
     return;
   }
   // Décide de l'action selon l'état + sched_out
@@ -3736,13 +3773,11 @@ async function borneProcessScan(uid){
   }catch(e){
     borneBeepError();
     if(e && e.status===409){
-      borneShowError('Action impossible',(e && e.message)||'\u00c9tat actuel ne permet pas '+action);
+      borneShowError('Action impossible',(e && e.message)||'\u00c9tat actuel ne permet pas '+action,'transient');
     }else{
-      borneShowError('Erreur pointage',(e && e.message)||'inconnue');
+      borneShowError('Erreur pointage',(e && e.message)||'inconnue','transient');
     }
-    // Logout best-effort puis retour idle
     borneLogout(auth.token);
-    borneBackTo('idle',BORNE_ERROR_MS);
     return;
   }
   // Succès : affiche, beep, logout, back to idle
@@ -3834,12 +3869,24 @@ function borneShowState(state,payload){
   }
 }
 
-function borneShowError(msg,sub){
+// errorKind contrôle le timer auto-back ET la visibilité du bouton Réessayer.
+//   'transient' (défaut)        — carte/réseau/clock : back idle 4s, pas de bouton
+//   'port_recoverable'          — open failed/lecteur occupé : pas de timer, bouton visible
+//   'port_disconnected'         — USB débranché : pas de timer, pas de bouton (reprise auto via 'connect')
+function borneShowError(msg,sub,errorKind){
+  errorKind=errorKind||'transient';
   var el=document.getElementById('borneErrorMsg');
   if(el)el.textContent=msg||'Erreur';
-  var s=document.getElementById('borneErrorSub');
-  if(s)s.textContent=sub||'';
+  var es=document.getElementById('borneErrorSub');
+  if(es)es.textContent=sub||'';
+  var btn=document.getElementById('borneRetryBtn');
+  if(btn)btn.style.display=(errorKind==='port_recoverable')?'inline-flex':'none';
   borneShowState('error');
+  // Cancel any prior auto-back timer (e.g. transient sur transient rapide)
+  if(borneStateBackTimer){clearTimeout(borneStateBackTimer);borneStateBackTimer=null;}
+  if(errorKind==='transient'){
+    borneStateBackTimer=setTimeout(function(){borneShowState('idle');},BORNE_ERROR_MS);
+  }
 }
 
 function borneBackTo(state,delayMs){
@@ -3917,12 +3964,14 @@ function borneStartHeartbeat(){
   },ms);
 }
 
-// Event delegation pour le bouton "Démarrer la borne"
+// Event delegation pour les boutons borne-start (boot) et borne-retry (error)
 if(document.getElementById('borneScreen')){
   document.getElementById('borneScreen').addEventListener('click',function(e){
     var b=e.target.closest('button[data-action]');
     if(!b)return;
-    if(b.getAttribute('data-action')==='borne-start')borneStart();
+    var act=b.getAttribute('data-action');
+    if(act==='borne-start')borneStart();
+    else if(act==='borne-retry')borneRetry();
   });
 }
 
