@@ -892,6 +892,38 @@ Bonjour ! Je suis votre assistant RH. Je peux analyser vos donn&#233;es de point
 var BORNE_MODE=(location.pathname==='/borne')||((new URLSearchParams(location.search).get('mode'))==='borne');
 if(BORNE_MODE)document.body.classList.add('borne-mode');
 
+// ═══ BORNE — constantes hoist-safe (Phase 6) ═══
+// Déplacées en tête du script pour être initialisées AVANT l'IIFE de startup
+// qui appelle initBorne() de façon synchrone (cf // STARTUP plus bas). Sinon
+// le var hoisting laisse les valeurs à `undefined` au parse-time et
+// setInterval(fn, undefined) crée une boucle quasi-infinie (4-10ms),
+// observée en prod = 10000+ requêtes /api/init en 30s. NE PAS redéplacer
+// ces vars en bas — le module borne en fin de script s'en sert directement.
+var BORNE_STATE='boot';
+var bornePort=null;
+var borneReader=null;
+var borneAudioCtx=null;
+var borneLastUid=null;
+var borneLastUidAt=0;
+var borneClockTimer=null;
+var borneHeartbeatTimer=null;
+var borneStateBackTimer=null;
+var borneRfidBuf='';
+var borneInitOnce=false;
+var RFID_DEDUP_MS=2000;
+var BORNE_RECOGNIZED_MS=3000;
+var BORNE_ERROR_MS=4000;
+var BORNE_HEARTBEAT_MS=60000;
+var BORNE_AUTH_TIMEOUT_MS=8000;
+var BORNE_CLOCK_TIMEOUT_MS=8000;
+var DEPARTURE_WINDOW_MIN=15;
+var ACTION_LABELS={
+  arrival:'Arriv\u00e9e',
+  break_start:'D\u00e9but de pause',
+  break_end:'Retour de pause',
+  departure:'D\u00e9part'
+};
+
 // ═══ AUTH SYSTEM ═══
 var SESSION_KEY='pointeuse_session';
 var TOKEN_KEY='pointeuse_token';
@@ -3494,37 +3526,12 @@ document.getElementById('rfidAssocModal').addEventListener('click',function(e){
 // ═══ BORNE RFID — module plein écran (Phase 6 étape 3) ═══
 // Activé uniquement si BORNE_MODE === true (cf détection top-of-script).
 // Cycle : boot → idle → recognized → idle (ou error → idle).
+// Constantes et state vars hoist-safe en tête du script (cf bloc
+// // ═══ BORNE — constantes hoist-safe ═══ vers le début).
 // Persistance Web Serial : navigator.serial.getPorts() permet d'auto-rouvrir
 // le port si l'admin a déjà autorisé une fois. AudioContext requiert un
 // user-gesture initial (clic "Démarrer") — donc même avec port persisté on
 // affiche le boot screen au premier chargement de la session.
-
-var BORNE_STATE='boot';
-var bornePort=null;
-var borneReader=null;
-var borneAudioCtx=null;
-var borneLastUid=null;
-var borneLastUidAt=0;
-var borneClockTimer=null;
-var borneHeartbeatTimer=null;
-var borneStateBackTimer=null;
-var borneRfidBuf='';
-var borneInitOnce=false;
-
-// Constantes
-var RFID_DEDUP_MS=2000;
-var BORNE_RECOGNIZED_MS=3000;
-var BORNE_ERROR_MS=4000;
-var BORNE_HEARTBEAT_MS=60000;
-var BORNE_AUTH_TIMEOUT_MS=8000;
-var BORNE_CLOCK_TIMEOUT_MS=8000;
-var DEPARTURE_WINDOW_MIN=15;
-var ACTION_LABELS={
-  arrival:'Arriv\u00e9e',
-  break_start:'D\u00e9but de pause',
-  break_end:'Retour de pause',
-  departure:'D\u00e9part'
-};
 
 function borneStationToken(){
   return new URLSearchParams(location.search).get('station_token')||'';
@@ -3894,14 +3901,20 @@ function borneStartClock(){
     if(el)el.textContent=hh+':'+mm+':'+ss;
   }
   tick();
+  // Garde-fou : si la constante n'est pas chargée (NaN/undefined), fallback 1000ms.
+  // Évite le piège setInterval(fn, undefined) qui boucle au minimum browser (~4ms).
   borneClockTimer=setInterval(tick,1000);
 }
 
 function borneStartHeartbeat(){
   if(borneHeartbeatTimer)return;
+  // Garde-fou hoist-safe : on tolère un BORNE_HEARTBEAT_MS qui aurait été perdu
+  // (regression future, refacto malheureux). Plancher 1000ms = 1/s max, jamais
+  // de boucle quasi-infinie même en cas de bug.
+  var ms=(typeof BORNE_HEARTBEAT_MS==='number' && BORNE_HEARTBEAT_MS>=1000)?BORNE_HEARTBEAT_MS:60000;
   borneHeartbeatTimer=setInterval(function(){
     fetch('/api/init',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).catch(function(){});
-  },BORNE_HEARTBEAT_MS);
+  },ms);
 }
 
 // Event delegation pour le bouton "Démarrer la borne"
