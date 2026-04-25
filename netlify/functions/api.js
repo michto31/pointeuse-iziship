@@ -366,7 +366,7 @@ exports.handler = async function (event) {
         await logSecurityEvent("rfid_station_invalid", null, null, { uid_prefix: rfidAuthPrefix, reason: "invalid_token" });
         return err("Station invalide", 401);
       }
-      var rfidAuthWorker = await sql1("SELECT id, name, pin_locked, last_clock_state FROM workers WHERE rfid_uid=$1", [rfidAuthUid]);
+      var rfidAuthWorker = await sql1("SELECT id, name, pin_locked, last_clock_state, sched_out FROM workers WHERE rfid_uid=$1", [rfidAuthUid]);
       if (!rfidAuthWorker) {
         await logSecurityEvent("rfid_unknown_card", null, rfidAuthStation.id, { uid: rfidAuthUid, reason: "no_match" });
         return err("Carte inconnue", 404);
@@ -380,7 +380,7 @@ exports.handler = async function (event) {
       return json({
         token: rfidAuthSess.token,
         expires_at: rfidAuthSess.expires_at,
-        worker: { id: rfidAuthWorker.id, name: rfidAuthWorker.name, last_clock_state: rfidAuthWorker.last_clock_state || "idle" }
+        worker: { id: rfidAuthWorker.id, name: rfidAuthWorker.name, last_clock_state: rfidAuthWorker.last_clock_state || "idle", sched_out: rfidAuthWorker.sched_out || "16:00" }
       });
     }
     // Minimal public endpoint pour la grille d'accueil du flow salarié (Phase 5).
