@@ -242,6 +242,14 @@ tr:hover td{background:#FAFBFD}
 .se-details{font-family:JetBrains Mono,monospace;font-size:11px;color:var(--text3);max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .se-timestamp{font-family:JetBrains Mono,monospace;font-size:12px;color:var(--text2)}
 .se-null{color:var(--text3);font-style:italic}
+
+/* ═══ RFID associate sub-modal (Phase 6) ═══ */
+.rfid-state{margin:0}
+.rfid-pulse{animation:rfidPulse 1.4s ease-in-out infinite}
+@keyframes rfidPulse{0%,100%{opacity:1}50%{opacity:.55}}
+.rfid-worker-section{padding:12px 20px 0;display:flex;flex-direction:column;gap:8px}
+.rfid-badge-ok{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;background:var(--green-light);color:var(--green);border-radius:6px;font-size:13px;font-weight:600}
+
 .punch-loading{text-align:center;color:var(--text3);padding:40px;font-size:14px;grid-column:1 / -1}
 
 .punch-b-inner,.punch-c-inner,.punch-d-inner,.punch-e-inner{max-width:520px;margin:0 auto;width:100%;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px}
@@ -764,6 +772,44 @@ Bonjour ! Je suis votre assistant RH. Je peux analyser vos donn&#233;es de point
 </div>
 </div></div>
 
+<!-- MODAL RFID ASSOCIATION (Phase 6) — overlay top-level, ind&eacute;pendant de #addModal -->
+<div class="modal-overlay" id="rfidAssocModal">
+<div class="modal" style="max-width:480px;">
+<div class="modal-header">Associer une carte RFID</div>
+<div class="modal-body">
+<div class="rfid-state rfid-state-instructions">
+<p style="margin:0 0 12px;font-size:14px;line-height:1.5;color:var(--text2);">Branchez le lecteur RFID Parallax au Mac via USB, cliquez <strong>Connecter</strong>, puis passez la carte du salari&eacute; devant le lecteur.</p>
+<p style="margin:0;font-size:12px;color:var(--text3);">Compatible Chrome / Edge uniquement. HTTPS requis.</p>
+</div>
+<div class="rfid-state rfid-state-connecting" hidden>
+<p style="text-align:center;color:var(--text2);padding:12px 0;">S&eacute;lection du port s&eacute;rie&hellip;</p>
+</div>
+<div class="rfid-state rfid-state-listening" hidden>
+<p class="rfid-pulse" style="text-align:center;font-size:16px;font-weight:600;color:var(--accent);margin:8px 0;">Passez la carte maintenant</p>
+<p style="text-align:center;font-size:12px;color:var(--text3);margin:8px 0 0;">Le 1er UID lu sera captur&eacute;. Timeout 30s.</p>
+</div>
+<div class="rfid-state rfid-state-captured" hidden>
+<p style="margin:0 0 8px;font-size:13px;color:var(--text2);">UID lu :</p>
+<div id="rfidCapturedUid" style="font-family:JetBrains Mono,monospace;font-size:18px;font-weight:600;text-align:center;padding:12px;background:var(--accent-light);color:var(--accent);border-radius:6px;letter-spacing:2px;">&mdash;</div>
+</div>
+<div class="rfid-state rfid-state-submitting" hidden>
+<p style="text-align:center;color:var(--text2);padding:12px 0;">Association en cours&hellip;</p>
+</div>
+<div class="rfid-state rfid-state-error" hidden>
+<p id="rfidErrorMsg" style="color:var(--red);text-align:center;padding:8px 0;font-size:14px;"></p>
+</div>
+</div>
+<div class="modal-footer">
+<button class="btn btn-outline" data-rfid-show="instructions" data-action="rfid-close">Annuler</button>
+<button class="btn btn-primary" data-rfid-show="instructions" data-action="rfid-connect">Connecter le lecteur</button>
+<button class="btn btn-outline" data-rfid-show="listening" data-action="rfid-close">Annuler</button>
+<button class="btn btn-outline" data-rfid-show="captured" data-action="rfid-connect">Recommencer</button>
+<button class="btn btn-primary" data-rfid-show="captured" data-action="rfid-confirm">Confirmer l'association</button>
+<button class="btn btn-primary" data-rfid-show="error" data-action="rfid-connect">R&eacute;essayer</button>
+<button class="btn btn-outline" data-rfid-show="error" data-action="rfid-close">Fermer</button>
+</div>
+</div></div>
+
 <script>
 // ═══ AUTH SYSTEM ═══
 var SESSION_KEY='pointeuse_session';
@@ -1136,7 +1182,7 @@ async function apiDelete(path){return apiFetch(path,{method:'DELETE'});}
 // Sync to/from server
 async function syncWorkers(){
   try{_workersCache=await apiGet('workers');
-  _workersCache=_workersCache.map(function(w){return{id:w.id,name:w.name,agency:w.agency,type:w.type,phone:w.phone,badge:w.badge,schedIn:w.sched_in||w.schedIn||'08:00',schedOut:w.sched_out||w.schedOut||'16:00',location:w.location||'toulouse',has_pin:!!w.has_pin,pin_locked:!!w.pin_locked};});
+  _workersCache=_workersCache.map(function(w){return{id:w.id,name:w.name,agency:w.agency,type:w.type,phone:w.phone,badge:w.badge,schedIn:w.sched_in||w.schedIn||'08:00',schedOut:w.sched_out||w.schedOut||'16:00',location:w.location||'toulouse',has_pin:!!w.has_pin,pin_locked:!!w.pin_locked,has_rfid:!!w.has_rfid};});
   }catch(e){console.error('syncWorkers error:',e);}
 }
 async function syncRecords(date,from,to){
@@ -1291,6 +1337,161 @@ async function resetWorkerPin(id){
   }catch(e){toast('Erreur: '+e.message,'error');}
 }
 
+// ═══ RFID — enrôlement / dissociation depuis fiche worker (Phase 6) ═══
+// Le sous-modal #rfidAssocModal a 6 états gérés via .rfid-state-* + [data-rfid-show]
+// instructions → connecting → listening → captured → submitting (succès) / error
+var rfidWorkerId=null;
+var rfidPort=null;
+var rfidReader=null;
+var rfidTimeout=null;
+var rfidBuf='';
+var rfidCapturedUid=null;
+
+function rfidSetState(s){
+  var modal=document.getElementById('rfidAssocModal');
+  if(!modal)return;
+  modal.querySelectorAll('.rfid-state').forEach(function(el){
+    el.hidden=!el.classList.contains('rfid-state-'+s);
+  });
+  modal.querySelectorAll('[data-rfid-show]').forEach(function(el){
+    var states=el.getAttribute('data-rfid-show').split(/\s+/);
+    el.hidden=states.indexOf(s)<0;
+  });
+}
+
+function rfidSetError(msg){
+  var el=document.getElementById('rfidErrorMsg');
+  if(el)el.textContent=msg||'Erreur inconnue';
+  rfidSetState('error');
+}
+
+function openRfidAssoc(workerId){
+  rfidWorkerId=parseInt(workerId,10);
+  if(isNaN(rfidWorkerId))return;
+  rfidCapturedUid=null;
+  rfidBuf='';
+  var disp=document.getElementById('rfidCapturedUid');
+  if(disp)disp.textContent='—';
+  rfidSetState('instructions');
+  document.getElementById('rfidAssocModal').classList.add('open');
+}
+
+async function closeRfidAssoc(){
+  await rfidCleanupRead();
+  document.getElementById('rfidAssocModal').classList.remove('open');
+  rfidWorkerId=null;
+  rfidCapturedUid=null;
+}
+
+async function rfidConnect(){
+  rfidSetState('connecting');
+  if(!navigator.serial){rfidSetError('Web Serial non support\u00e9. Utilisez Chrome ou Edge.');return;}
+  await rfidCleanupRead();
+  try{
+    rfidPort=await navigator.serial.requestPort();
+  }catch(e){
+    if(e && e.name==='NotFoundError'){rfidSetError('Aucun port s\u00e9lectionn\u00e9.');return;}
+    if(e && e.name==='SecurityError'){rfidSetError('HTTPS requis pour Web Serial.');return;}
+    rfidSetError('Erreur acc\u00e8s port : '+(e.message||e.name||'inconnue'));
+    return;
+  }
+  try{
+    await rfidPort.open({baudRate:2400,dataBits:8,stopBits:1,parity:'none'});
+    await rfidPort.setSignals({dataTerminalReady:true});
+  }catch(e){
+    rfidSetError('Erreur ouverture port : '+(e.message||'inconnue'));
+    try{await rfidPort.close();}catch(_e){}
+    rfidPort=null;
+    return;
+  }
+  rfidSetState('listening');
+  rfidStartReadLoop();
+}
+
+function rfidStartReadLoop(){
+  if(!rfidPort || !rfidPort.readable){rfidSetError('Port non lisible.');return;}
+  rfidBuf='';
+  rfidReader=rfidPort.readable.getReader();
+  rfidTimeout=setTimeout(function(){
+    rfidAbortRead('Aucune carte d\u00e9tect\u00e9e en 30s. V\u00e9rifiez le lecteur et la carte.');
+  },30000);
+  (async function(){
+    var dec=new TextDecoder('ascii');
+    try{
+      while(true){
+        var r=await rfidReader.read();
+        if(r.done)break;
+        rfidBuf+=dec.decode(r.value);
+        var m=rfidBuf.match(/\n([0-9A-F]{10})\r/);
+        if(m){
+          rfidCapturedUid=m[1];
+          await rfidCleanupRead();
+          var disp=document.getElementById('rfidCapturedUid');
+          if(disp)disp.textContent=rfidCapturedUid;
+          rfidSetState('captured');
+          return;
+        }
+      }
+    }catch(e){
+      // Reader cancelled normalement par cleanup, on ignore.
+    }
+  })();
+}
+
+async function rfidAbortRead(msg){
+  await rfidCleanupRead();
+  rfidSetError(msg);
+}
+
+async function rfidCleanupRead(){
+  if(rfidTimeout){clearTimeout(rfidTimeout);rfidTimeout=null;}
+  if(rfidReader){try{await rfidReader.cancel();}catch(e){}try{rfidReader.releaseLock();}catch(e){}rfidReader=null;}
+  if(rfidPort){try{await rfidPort.close();}catch(e){}rfidPort=null;}
+  rfidBuf='';
+}
+
+async function rfidConfirm(){
+  if(!rfidCapturedUid || !rfidWorkerId)return;
+  var wid=rfidWorkerId;
+  var uid=rfidCapturedUid;
+  rfidSetState('submitting');
+  try{
+    await apiPost('workers/'+wid+'/rfid',{uid:uid});
+    toast('Carte associ\u00e9e');
+    document.getElementById('rfidAssocModal').classList.remove('open');
+    await syncWorkers();
+    renderWorkersTable();
+    setTimeout(function(){editWorker(wid);},120);
+    rfidWorkerId=null;
+    rfidCapturedUid=null;
+  }catch(e){
+    var msg=(e && e.message)||'Erreur inconnue';
+    // Le backend renvoie "Carte déjà associée à un autre salarié" en 409
+    if(msg.indexOf('d\u00e9j\u00e0 associ\u00e9e')>=0){
+      rfidSetError('Cette carte est d\u00e9j\u00e0 associ\u00e9e \u00e0 un autre salari\u00e9.');
+    }else{
+      rfidSetError(msg);
+    }
+  }
+}
+
+async function dissociateRfid(workerId){
+  var wid=parseInt(workerId,10);
+  if(isNaN(wid))return;
+  if(!confirm('Dissocier la carte RFID de ce salari\u00e9 ?'))return;
+  try{
+    await apiDelete('workers/'+wid+'/rfid');
+    toast('Carte dissoci\u00e9e');
+    await syncWorkers();
+    renderWorkersTable();
+    closeEditWorker();
+    setTimeout(function(){editWorker(wid);},120);
+  }catch(e){
+    toast('Erreur : '+(e.message||'inconnue'),'error');
+  }
+}
+
+
 function editWorker(id){
   id=parseInt(id,10);
   var w=lW().find(function(x){return x.id===id;});
@@ -1307,6 +1508,12 @@ function editWorker(id){
     '<div class="form-group"><label class="form-label">Arriv\u00e9e th\u00e9orique</label><input type="time" class="form-control" id="editWSchedIn" value="'+(w.schedIn||'08:00')+'"></div>'+
     '<div class="form-group"><label class="form-label">D\u00e9part th\u00e9orique</label><input type="time" class="form-control" id="editWSchedOut" value="'+(w.schedOut||'16:00')+'"></div>'+
     '</div></div>'+
+    '<div class="rfid-worker-section">'+
+    '<div style="font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;">Carte RFID</div>'+
+    (w.has_rfid
+      ? '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;"><span class="rfid-badge-ok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Carte associ\u00e9e</span><button class="btn btn-outline btn-sm" type="button" data-action="rfid-unenroll" data-worker-id="'+parseInt(id,10)+'" style="color:var(--red);border-color:var(--red);">Dissocier</button></div>'
+      : '<button class="btn btn-outline btn-sm" type="button" data-action="rfid-enroll" data-worker-id="'+parseInt(id,10)+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 15h.01"/><path d="M11 15h2"/></svg> Associer une carte RFID</button>')+
+    '</div>'+
     (w.has_pin?'<div style="padding:12px 20px 0;"><button class="btn btn-outline" type="button" onclick="resetWorkerPin('+parseInt(id,10)+')" style="color:var(--red);border-color:var(--red);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> R\u00e9initialiser le PIN'+(w.pin_locked?' (verrouill\u00e9)':'')+'</button></div>':'')+
     '<div class="modal-footer"><button class="btn btn-outline" onclick="closeEditWorker()">Annuler</button><button class="btn btn-primary" onclick="saveEditWorker(\''+id+'\')">Enregistrer</button></div>';
   document.getElementById('addModal').classList.add('open');
@@ -3169,6 +3376,31 @@ document.addEventListener('DOMContentLoaded',function(){
 document.getElementById('addModal').addEventListener('click',function(e){if(e.target===this)closeAddModal();});
 document.getElementById('editModal').addEventListener('click',function(e){if(e.target===this)closeEditModal();});
 document.getElementById('newName').addEventListener('keydown',function(e){if(e.key==='Enter')addWorker();});
+
+// Event delegation pour les boutons RFID dans la modale Modifier (template
+// dynamique d'editWorker — pas de listener inline). Le handler vit sur #addModal
+// et survit aux innerHTML replacements (listener attaché à l'overlay parent,
+// pas aux boutons enfants).
+document.getElementById('addModal').addEventListener('click',function(e){
+  var b=e.target.closest('button[data-action]');
+  if(!b)return;
+  var act=b.getAttribute('data-action');
+  var wid=b.getAttribute('data-worker-id');
+  if(act==='rfid-enroll' && wid)openRfidAssoc(wid);
+  else if(act==='rfid-unenroll' && wid)dissociateRfid(wid);
+});
+
+// Event delegation interne au sous-modal RFID (data-action sur les boutons du footer).
+document.getElementById('rfidAssocModal').addEventListener('click',function(e){
+  // Click sur l'overlay (hors .modal) : ferme proprement
+  if(e.target===this){closeRfidAssoc();return;}
+  var b=e.target.closest('button[data-action]');
+  if(!b)return;
+  var act=b.getAttribute('data-action');
+  if(act==='rfid-close')closeRfidAssoc();
+  else if(act==='rfid-connect')rfidConnect();
+  else if(act==='rfid-confirm')rfidConfirm();
+});
 
 // ═══ QR CODE GENERATOR (POSTES) ═══
 // Postes: managed by API data layer (loadPostes = _postesCache)
