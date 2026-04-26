@@ -124,6 +124,45 @@ Trace : event `pointage_orphan_closed` dans `security_events` avec `details = {w
 
 Limitation V1 documentée plus haut : le calcul `(sched_out - sched_in + 1440) % 1440` gère correctement les horaires de nuit modernes mais pas les workers en horaires décalés très exotiques. Acceptable pour la flotte actuelle (CDI 09–17, intérimaires 09–18).
 
+### Cartes intérimaires partagées (Phase 6 ext)
+
+Concept : N cartes RFID "intérim" interchangeables, distribuées par l'admin le matin et rendues le soir. Quand une carte intérim est scannée à la borne, écran de sélection agence puis liste des intérimaires de l'agence (créables à la volée pour les nouveaux). Les cartes nominatives existantes (`workers.rfid_uid`) continuent en parallèle.
+
+**Schéma DB ajouté** :
+- `interim_cards (id, uid VARCHAR(10) UNIQUE, label, active, created_at)` : whitelist des cartes partagées. Enrôlement V1 via SQL : `INSERT INTO interim_cards (uid, label) VALUES ('XXXXXXXXXX', 'Carte 1');`
+- `interim_cards_creations (card_uid, date, count, PK composite)` : compteur (carte, jour) pour limiter à 1 création/carte/jour.
+- `workers.active BOOLEAN DEFAULT true` : marque les départs sans suppression. Toutes les listes filtrent `COALESCE(active, true)=true`.
+- `workers.pending_admin_approval BOOLEAN DEFAULT false` : worker créé via borne, en attente. Visible dans la borne pour son propre pointage MAIS masqué dans `/api/public/worker-names` (dashboard) et le rapport tant que pending.
+- `workers.created_via_borne BOOLEAN DEFAULT false` : trace l'origine.
+
+**Workflow** :
+1. Karim arrive, l'admin lui donne une carte intérim libre.
+2. Karim scanne → `POST /api/auth/rfid` ne trouve pas de worker, MAIS trouve la carte dans `interim_cards` → renvoie `{type:"interim_picker", card_uid, agencies:[]}` (PAS de session).
+3. Borne montre l'écran agence → Karim clique "Adecco".
+4. Borne `POST /api/interim/list-by-agency` → liste des Adecco actifs+approuvés.
+5a. Karim clique son nom → `POST /api/interim/clock {card_uid, station_token, worker_id}` → session worker 16h + log `rfid_clock_via_group_card`. Borne enchaîne `POST /api/clock` comme pour une carte nominative.
+5b. Karim clique "+ Je suis nouveau" → formulaire (prénom, nom, téléphone) → submit → optional `POST /api/interim/fuzzy-search` (ILIKE pour pré-vérifier doublons) → si match modal "Vous êtes X ?" → soit clock sur match soit POST `/api/interim/create` → worker créé `pending_admin_approval=true`, log `worker_created_via_borne` + `rfid_clock_via_group_card`, session 16h.
+
+**Routes Phase 6 ext** :
+- `POST /api/auth/rfid` : modifié — fallback `interim_picker` si UID pas dans workers mais dans interim_cards.
+- `POST /api/interim/list-by-agency` [PUBLIC, 30/min/IP bucket `interim_list`]
+- `POST /api/interim/fuzzy-search` [PUBLIC, 30/min/IP bucket `interim_list`] — ILIKE simple, pas Levenshtein (extension `fuzzystrmatch` non garantie sur Neon)
+- `POST /api/interim/clock` [PUBLIC, 30/min/IP bucket `interim_clock`]
+- `POST /api/interim/create` [PUBLIC, 5/min/IP bucket `interim_create`] — limites : 1 création/carte/jour + 5 globales/jour
+- `GET /api/admin/workers/pending` [admin] — liste des workers à valider
+- `POST /api/admin/workers/:id/approve` [admin] — passe `pending_admin_approval` à false
+
+**Anti-collision** : `POST /api/workers/:id/rfid` rejette désormais (409) une UID déjà déclarée comme carte intérim. Inverse non géré (pas de route admin pour `interim_cards` en V1) — l'admin doit vérifier manuellement avant `INSERT INTO interim_cards`.
+
+**Event types ajoutés (5)** : `rfid_clock_via_group_card`, `worker_created_via_borne`, `worker_approved`, `interim_card_limit_exceeded`, `interim_create_global_limit_exceeded`. Les details `uid_prefix` ou `card_uid_prefix` masqués 4 chars + `***` partout.
+
+**Limitation V1** : pas de protection contre multi-clic rapide sur le picker intérim (l'utilisateur peut cliquer 2 noms différents en succession). La state machine `/api/clock` refuse les transitions invalides → le 2e clic donne un 409 propre. Acceptable pour V1, à durcir si observé en prod.
+
+**Sémantique des flags workers** :
+- `active=false` → worker parti (préserve historique mais masqué partout)
+- `pending_admin_approval=true` → worker créé via borne, attente de validation. Visible dans la borne pour son propre flux, masqué dashboard et rapport.
+- Un worker peut être `active=true && pending_admin_approval=true` (nouveau, en attente) ou `active=true && pending_admin_approval=false` (validé) ou `active=false` (parti).
+
 ## Conventions when editing
 
 - Prefer ES5-style `var` + `function` in both files — that's what the existing code uses and there's no transpile step for the function (esbuild will accept modern syntax, but the frontend runs as-is in browsers and matches the function style).

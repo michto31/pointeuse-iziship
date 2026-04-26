@@ -166,7 +166,7 @@ async function closeOrphanPointages(workerId) {
 
 // Types d'événements security_events. Non contraint en DB (TEXT libre) mais toute
 // insertion doit passer par logSecurityEvent() qui vérifie le type.
-var SECURITY_EVENT_TYPES = { pin_fail: true, pin_lock: true, pin_create: true, pin_reset: true, station_regen: true, station_secret_view: true, rfid_enroll: true, rfid_unenroll: true, rfid_clock: true, rfid_unknown_card: true, rfid_locked_card: true, rfid_station_invalid: true, pointage_orphan_closed: true };
+var SECURITY_EVENT_TYPES = { pin_fail: true, pin_lock: true, pin_create: true, pin_reset: true, station_regen: true, station_secret_view: true, rfid_enroll: true, rfid_unenroll: true, rfid_clock: true, rfid_unknown_card: true, rfid_locked_card: true, rfid_station_invalid: true, pointage_orphan_closed: true, rfid_clock_via_group_card: true, worker_created_via_borne: true, worker_approved: true, interim_card_limit_exceeded: true, interim_create_global_limit_exceeded: true };
 async function logSecurityEvent(eventType, workerId, stationId, details) {
   if (!SECURITY_EVENT_TYPES[eventType]) throw new Error("Invalid security event type: " + eventType);
   await sql(
@@ -475,8 +475,25 @@ exports.handler = async function (event) {
         await logSecurityEvent("rfid_station_invalid", null, null, { uid_prefix: rfidAuthPrefix, reason: "invalid_token" });
         return err("Station invalide", 401);
       }
-      var rfidAuthWorker = await sql1("SELECT id, name, pin_locked, last_clock_state, sched_out FROM workers WHERE rfid_uid=$1", [rfidAuthUid]);
+      var rfidAuthWorker = await sql1("SELECT id, name, pin_locked, last_clock_state, sched_out FROM workers WHERE rfid_uid=$1 AND COALESCE(active, true)=true", [rfidAuthUid]);
       if (!rfidAuthWorker) {
+        // Fallback Phase 6 ext : la carte n'est pas une carte personnelle, mais
+        // peut être une carte intérimaire partagée. Si oui, retourne un picker
+        // (pas de session ici — la session sera créée par /api/interim/clock
+        // ou /api/interim/create après que le worker aura été choisi).
+        var interimCard = await sql1("SELECT id FROM interim_cards WHERE uid=$1 AND active=true", [rfidAuthUid]);
+        if (interimCard) {
+          var agencies = await sql(
+            "SELECT DISTINCT agency FROM workers " +
+            "WHERE type='interim' AND agency IS NOT NULL AND agency<>'' AND COALESCE(active, true)=true " +
+            "ORDER BY agency"
+          );
+          return json({
+            type: "interim_picker",
+            card_uid: rfidAuthUid,
+            agencies: agencies.map(function (a) { return a.agency; })
+          });
+        }
         await logSecurityEvent("rfid_unknown_card", null, rfidAuthStation.id, { uid: rfidAuthUid, reason: "no_match" });
         return err("Carte inconnue", 404);
       }
@@ -500,14 +517,238 @@ exports.handler = async function (event) {
         worker: { id: rfidAuthWorker.id, name: rfidAuthWorker.name, last_clock_state: rfidAuthState, sched_out: rfidAuthWorker.sched_out || "16:00" }
       });
     }
+
+    // ═══ Phase 6 ext — flux cartes intérimaires partagées ═══════════════
+    // 4 routes publiques rate-limitées + 2 routes admin. La carte intérimaire
+    // a été reconnue par /api/auth/rfid qui a renvoyé un picker — la borne
+    // navigue ensuite via list-by-agency, fuzzy-search (sur le formulaire de
+    // création uniquement), puis clock OU create.
+
+    // POST /api/interim/list-by-agency [PUBLIC, 30/min/IP bucket interim_list]
+    // body : {card_uid, station_token, agency} → liste des intérimaires de
+    // l'agence (active=true, pending_admin_approval=false).
+    if (method === "POST" && path === "interim/list-by-agency") {
+      if (!checkRateLimit(event, 30, "interim_list")) return json({ error: "Too many requests" }, 429);
+      var ilCardUid = String((body && body.card_uid) || "").trim().toUpperCase();
+      var ilStationToken = String((body && body.station_token) || "").trim();
+      var ilAgency = String((body && body.agency) || "").trim();
+      if (!ilCardUid || !ilStationToken || !ilAgency) return err("card_uid, station_token et agency requis");
+      var ilStation = await verifyStationToken(ilStationToken);
+      if (!ilStation) return err("Station invalide", 401);
+      var ilCard = await sql1("SELECT id FROM interim_cards WHERE uid=$1 AND active=true", [ilCardUid]);
+      if (!ilCard) return err("Carte intérimaire inconnue", 401);
+      var ilWorkers = await sql(
+        "SELECT id, name, last_clock_state FROM workers " +
+        "WHERE type='interim' AND agency=$1 " +
+        "AND COALESCE(active, true)=true AND COALESCE(pending_admin_approval, false)=false " +
+        "ORDER BY name",
+        [ilAgency]
+      );
+      return json({ workers: ilWorkers });
+    }
+
+    // POST /api/interim/fuzzy-search [PUBLIC, 30/min/IP bucket interim_list]
+    // body : {card_uid, station_token, first_name, last_name} → matches ILIKE
+    // pour pré-vérifier doublons AVANT POST /api/interim/create.
+    if (method === "POST" && path === "interim/fuzzy-search") {
+      if (!checkRateLimit(event, 30, "interim_list")) return json({ error: "Too many requests" }, 429);
+      var fsCardUid = String((body && body.card_uid) || "").trim().toUpperCase();
+      var fsStationToken = String((body && body.station_token) || "").trim();
+      var fsFirst = String((body && body.first_name) || "").trim();
+      var fsLast = String((body && body.last_name) || "").trim();
+      if (!fsCardUid || !fsStationToken) return err("card_uid et station_token requis");
+      var fsStation = await verifyStationToken(fsStationToken);
+      if (!fsStation) return err("Station invalide", 401);
+      var fsCard = await sql1("SELECT id FROM interim_cards WHERE uid=$1 AND active=true", [fsCardUid]);
+      if (!fsCard) return err("Carte intérimaire inconnue", 401);
+      if (!fsFirst && !fsLast) return json({ matches: [] });
+      // ILIKE pattern : '%first%last%' tolère casse, espaces et inversions partielles.
+      // Fuzzystrmatch (Levenshtein) pas garanti sur Neon — V1 ILIKE simple suffit.
+      var fsParts = [];
+      if (fsFirst) fsParts.push(fsFirst);
+      if (fsLast) fsParts.push(fsLast);
+      var fsPattern = "%" + fsParts.join("%") + "%";
+      var fsMatches = await sql(
+        "SELECT id, name, agency FROM workers " +
+        "WHERE type='interim' AND COALESCE(active, true)=true AND COALESCE(pending_admin_approval, false)=false " +
+        "AND name ILIKE $1 " +
+        "ORDER BY name LIMIT 5",
+        [fsPattern]
+      );
+      return json({ matches: fsMatches });
+    }
+
+    // POST /api/interim/clock [PUBLIC, 30/min/IP bucket interim_clock]
+    // body : {card_uid, station_token, worker_id} → close orphans + issue
+    // session worker 16h. Le borne enchaîne avec POST /api/clock.
+    if (method === "POST" && path === "interim/clock") {
+      if (!checkRateLimit(event, 30, "interim_clock")) return json({ error: "Too many requests" }, 429);
+      var icCardUid = String((body && body.card_uid) || "").trim().toUpperCase();
+      var icStationToken = String((body && body.station_token) || "").trim();
+      var icWorkerId = parseInt(body && body.worker_id, 10);
+      if (!icCardUid || !icStationToken || !icWorkerId) return err("card_uid, station_token et worker_id requis");
+      var icStation = await verifyStationToken(icStationToken);
+      if (!icStation) return err("Station invalide", 401);
+      var icCard = await sql1("SELECT id FROM interim_cards WHERE uid=$1 AND active=true", [icCardUid]);
+      if (!icCard) return err("Carte intérimaire inconnue", 401);
+      var icWorker = await sql1(
+        "SELECT id, name, agency, pin_locked, last_clock_state, sched_out FROM workers " +
+        "WHERE id=$1 AND type='interim' AND COALESCE(active, true)=true",
+        [icWorkerId]
+      );
+      if (!icWorker) return err("Intérimaire introuvable ou inactif", 404);
+      if (icWorker.pin_locked) return err("Compte verrouillé", 423);
+      // Auto-clôture des records orphelins du jour précédent (cf closeOrphanPointages).
+      await closeOrphanPointages(icWorker.id);
+      var icFresh = await sql1("SELECT last_clock_state FROM workers WHERE id=$1", [icWorker.id]);
+      var icState = (icFresh && icFresh.last_clock_state) || "idle";
+      var icSess = await issueSession("worker", icWorker.id, 16);
+      await logSecurityEvent("rfid_clock_via_group_card", icWorker.id, icStation.id, {
+        card_uid_prefix: icCardUid.substring(0, 4) + "***",
+        picked_worker_id: icWorker.id,
+        picked_worker_name: icWorker.name,
+        agency: icWorker.agency || ""
+      });
+      return json({
+        token: icSess.token,
+        expires_at: icSess.expires_at,
+        worker: { id: icWorker.id, name: icWorker.name, last_clock_state: icState, sched_out: icWorker.sched_out || "17:00" }
+      });
+    }
+
+    // POST /api/interim/create [PUBLIC, 5/min/IP bucket interim_create]
+    // body : {card_uid, station_token, first_name, last_name, phone, agency}
+    // Crée un worker intérimaire avec pending_admin_approval=true. Limites :
+    // 1 création/carte/jour + 5 créations globales/jour (anti-abus).
+    if (method === "POST" && path === "interim/create") {
+      if (!checkRateLimit(event, 5, "interim_create")) return json({ error: "Too many requests" }, 429);
+      var iCreateCardUid = String((body && body.card_uid) || "").trim().toUpperCase();
+      var iCreateStationToken = String((body && body.station_token) || "").trim();
+      var iCreateFirst = String((body && body.first_name) || "").trim();
+      var iCreateLast = String((body && body.last_name) || "").trim();
+      var iCreatePhone = String((body && body.phone) || "").trim();
+      var iCreateAgency = String((body && body.agency) || "").trim();
+      if (!iCreateCardUid || !iCreateStationToken || !iCreateFirst || !iCreateLast || !iCreatePhone || !iCreateAgency) {
+        return err("Tous les champs requis (card_uid, station_token, first_name, last_name, phone, agency)");
+      }
+      if (!/^[+\d\s.\-()]{6,30}$/.test(iCreatePhone)) return err("Format téléphone invalide");
+      var iCreateStation = await verifyStationToken(iCreateStationToken);
+      if (!iCreateStation) return err("Station invalide", 401);
+      var iCreateCard = await sql1("SELECT id FROM interim_cards WHERE uid=$1 AND active=true", [iCreateCardUid]);
+      if (!iCreateCard) return err("Carte intérimaire inconnue", 401);
+      // Agence existante (au moins 1 worker actif dans cette agence)
+      var iCreateAgencyCheck = await sql1(
+        "SELECT 1 FROM workers WHERE type='interim' AND agency=$1 AND COALESCE(active, true)=true LIMIT 1",
+        [iCreateAgency]
+      );
+      if (!iCreateAgencyCheck) return err("Agence inconnue", 400);
+      var iCreateToday = getParisDate();
+      // Limite par carte (1/jour)
+      var iCreateCardCount = await sql1(
+        "SELECT count FROM interim_cards_creations WHERE card_uid=$1 AND date=$2",
+        [iCreateCardUid, iCreateToday]
+      );
+      if (iCreateCardCount && iCreateCardCount.count >= 1) {
+        await logSecurityEvent("interim_card_limit_exceeded", null, iCreateStation.id, {
+          card_uid_prefix: iCreateCardUid.substring(0, 4) + "***",
+          attempted_name: iCreateFirst + " " + iCreateLast,
+          attempted_agency: iCreateAgency
+        });
+        return err("Limite de création atteinte pour cette carte aujourd'hui", 429);
+      }
+      // Limite globale (5/jour, basée sur created_at converti en heure de Paris)
+      var iCreateGlobalCount = await sql1(
+        "SELECT COUNT(*)::int AS n FROM workers " +
+        "WHERE COALESCE(created_via_borne, false)=true " +
+        "AND (created_at AT TIME ZONE 'Europe/Paris')::date = $1::date",
+        [iCreateToday]
+      );
+      if (iCreateGlobalCount && iCreateGlobalCount.n >= 5) {
+        await logSecurityEvent("interim_create_global_limit_exceeded", null, iCreateStation.id, {
+          card_uid_prefix: iCreateCardUid.substring(0, 4) + "***",
+          current_count: iCreateGlobalCount.n
+        });
+        return err("Limite globale de créations atteinte aujourd'hui", 429);
+      }
+      var iCreateName = iCreateFirst + " " + iCreateLast;
+      var iCreateNew = await sql1(
+        "INSERT INTO workers (name, type, agency, phone, sched_in, sched_out, last_clock_state, active, pending_admin_approval, created_via_borne) " +
+        "VALUES ($1, 'interim', $2, $3, '09:00', '17:00', 'idle', true, true, true) " +
+        "RETURNING id, name, agency, sched_out, last_clock_state",
+        [iCreateName, iCreateAgency, iCreatePhone]
+      );
+      // Increment compteur carte (atomic via ON CONFLICT)
+      await sql(
+        "INSERT INTO interim_cards_creations (card_uid, date, count) VALUES ($1, $2, 1) " +
+        "ON CONFLICT (card_uid, date) DO UPDATE SET count = interim_cards_creations.count + 1",
+        [iCreateCardUid, iCreateToday]
+      );
+      await logSecurityEvent("worker_created_via_borne", iCreateNew.id, iCreateStation.id, {
+        card_uid_prefix: iCreateCardUid.substring(0, 4) + "***",
+        new_worker_id: iCreateNew.id,
+        name: iCreateName,
+        agency: iCreateAgency
+      });
+      // La création vaut un pointage immédiat → log aussi rfid_clock_via_group_card
+      await logSecurityEvent("rfid_clock_via_group_card", iCreateNew.id, iCreateStation.id, {
+        card_uid_prefix: iCreateCardUid.substring(0, 4) + "***",
+        picked_worker_id: iCreateNew.id,
+        picked_worker_name: iCreateName,
+        agency: iCreateAgency,
+        via_creation: true
+      });
+      var iCreateSess = await issueSession("worker", iCreateNew.id, 16);
+      return json({
+        token: iCreateSess.token,
+        expires_at: iCreateSess.expires_at,
+        worker: { id: iCreateNew.id, name: iCreateName, last_clock_state: "idle", sched_out: iCreateNew.sched_out || "17:00" }
+      }, 201);
+    }
+
+    // GET /api/admin/workers/pending [admin] — liste des workers créés via
+    // borne en attente de validation.
+    if (method === "GET" && path === "admin/workers/pending") {
+      await requireAuth(event, "admin");
+      var pendingWorkers = await sql(
+        "SELECT id, name, agency, phone, type, sched_in, sched_out, last_clock_state, " +
+        "COALESCE(created_via_borne, false) AS created_via_borne, created_at " +
+        "FROM workers WHERE COALESCE(pending_admin_approval, false)=true " +
+        "ORDER BY created_at DESC"
+      );
+      return json({ workers: pendingWorkers });
+    }
+
+    // POST /api/admin/workers/:id/approve [admin] — passe un worker pending à
+    // approuvé. Visible immédiatement sur le dashboard "Qui pointe" et le
+    // rapport RH.
+    if (method === "POST" && seg[0] === "admin" && seg[1] === "workers" && seg[2] && seg[3] === "approve" && !seg[4]) {
+      var approveAuth = await requireAuth(event, "admin");
+      var approveWorkerId = parseInt(seg[2], 10);
+      if (!approveWorkerId) return err("Worker ID invalide");
+      var approveResult = await sql1(
+        "UPDATE workers SET pending_admin_approval=false, updated_at=NOW() " +
+        "WHERE id=$1 AND COALESCE(pending_admin_approval, false)=true " +
+        "RETURNING id, name",
+        [approveWorkerId]
+      );
+      if (!approveResult) return err("Worker introuvable ou déjà approuvé", 404);
+      await logSecurityEvent("worker_approved", approveWorkerId, null, {
+        admin_worker_id: approveAuth.worker_id,
+        worker_name: approveResult.name
+      });
+      return json({ ok: true });
+    }
+
     // Minimal public endpoint pour la grille d'accueil du flow salarié (Phase 5).
     // Renvoie id, name, type (contract kind), location (site physique).
     // Type et location sont nécessaires côté client pour les segmented controls
     // Salariés/Intérimaires × Location. Rate-limited 20/min/IP contre scraping.
-    // TODO: filtrer sur actif=true si/quand la colonne arrive sur workers.
+    // Phase 6 ext : filtre les workers active=false (départs) ET les pending
+    // (créations borne non encore validées par l'admin) — pas de pollution
+    // de la liste publique tant que l'admin n'a pas approuvé.
     if (method === "GET" && path === "public/worker-names") {
       if (!checkRateLimit(event, 20)) return json({ error: "Too many requests" }, 429);
-      return json(await sql("SELECT id, name, type, location, agency FROM workers ORDER BY name"));
+      return json(await sql("SELECT id, name, type, location, agency FROM workers WHERE COALESCE(pending_admin_approval, false)=false AND COALESCE(active, true)=true ORDER BY name"));
     }
 
     if (method === "POST" && path === "assistant") { await requireAuth(event, "admin"); return await handleAssistant(body); }
@@ -516,7 +757,7 @@ exports.handler = async function (event) {
     if (method === "POST" && path === "agent/feedback") { await requireAuth(event, "admin"); await sql("UPDATE agent_memory SET feedback=$1 WHERE id=$2", [body.feedback, body.id]); return json({ ok: true }); }
     if (method === "GET" && path === "agent/runs") { await requireAuth(event, "admin"); return json(await sql("SELECT * FROM agent_runs ORDER BY run_date DESC LIMIT 20")); }
 
-    if (method === "GET" && path === "workers") { await requireAuth(event, "admin"); return json(await sql("SELECT id, name, agency, type, phone, badge, sched_in, sched_out, location, pin_attempts, pin_locked, last_clock_state, (pin_hash IS NOT NULL) AS has_pin, (rfid_uid IS NOT NULL) AS has_rfid, created_at, updated_at FROM workers ORDER BY type, name")); }
+    if (method === "GET" && path === "workers") { await requireAuth(event, "admin"); return json(await sql("SELECT id, name, agency, type, phone, badge, sched_in, sched_out, location, pin_attempts, pin_locked, last_clock_state, (pin_hash IS NOT NULL) AS has_pin, (rfid_uid IS NOT NULL) AS has_rfid, COALESCE(active, true) AS active, COALESCE(pending_admin_approval, false) AS pending_admin_approval, COALESCE(created_via_borne, false) AS created_via_borne, created_at, updated_at FROM workers ORDER BY type, name")); }
     if (method === "POST" && path === "workers") {
       await requireAuth(event, "admin");
       if (!body.name) return err("Nom requis");
@@ -976,6 +1217,11 @@ exports.handler = async function (event) {
       if (!/^[0-9A-F]{10}$/.test(rfidEnrollUid)) return err("Format UID invalide");
       var rfidEnrollWorker = await sql1("SELECT id FROM workers WHERE id=$1", [rfidEnrollWorkerId]);
       if (!rfidEnrollWorker) return err("Worker introuvable", 404);
+      // Anti-collision Phase 6 ext : refuser une UID déjà déclarée comme carte
+      // intérimaire partagée (sinon /api/auth/rfid donnerait toujours priorité
+      // au worker, mais on évite l'état corrompu en amont).
+      var rfidEnrollInterim = await sql1("SELECT id FROM interim_cards WHERE uid=$1", [rfidEnrollUid]);
+      if (rfidEnrollInterim) return err("Cette carte est déjà déclarée comme carte intérimaire partagée", 409);
       var rfidEnrollTaken = await sql1("SELECT id FROM workers WHERE rfid_uid=$1 AND id<>$2", [rfidEnrollUid, rfidEnrollWorkerId]);
       if (rfidEnrollTaken) return err("Carte déjà associée à un autre salarié", 409);
       await sql("UPDATE workers SET rfid_uid=$1, updated_at=NOW() WHERE id=$2", [rfidEnrollUid, rfidEnrollWorkerId]);
@@ -1091,6 +1337,27 @@ async function initDB() {
   // Format validé côté route (regex /^[0-9A-F]{10}$/), pas de CHECK en DB.
   await sql("ALTER TABLE workers ADD COLUMN IF NOT EXISTS rfid_uid TEXT");
   await sql("CREATE UNIQUE INDEX IF NOT EXISTS idx_workers_rfid_uid ON workers(rfid_uid) WHERE rfid_uid IS NOT NULL");
+
+  // ═══ Phase 6 ext — cartes intérimaires partagées + workflow approbation ═══
+  // workers.active : marque les workers "partis" sans les supprimer (préserve
+  //   l'historique). Default true. Filtre toutes les listes côté front.
+  // workers.pending_admin_approval : worker créé via borne, en attente de
+  //   validation admin. Visible dans la borne (pour son propre pointage) mais
+  //   masqué dans le dashboard "Qui pointe" et le rapport RH tant que pending.
+  // workers.created_via_borne : trace l'origine de la création (≠ admin manuel).
+  await sql("ALTER TABLE workers ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT true");
+  await sql("ALTER TABLE workers ADD COLUMN IF NOT EXISTS pending_admin_approval BOOLEAN DEFAULT false");
+  await sql("ALTER TABLE workers ADD COLUMN IF NOT EXISTS created_via_borne BOOLEAN DEFAULT false");
+
+  // interim_cards : whitelist des cartes RFID partagées (distribuées le matin
+  //   à l'équipe intérim, rendues le soir). Différent de workers.rfid_uid qui
+  //   est une carte personnelle. uid VARCHAR(10) = 10 chars hex EM4100.
+  await sql("CREATE TABLE IF NOT EXISTS interim_cards (id SERIAL PRIMARY KEY, uid VARCHAR(10) UNIQUE NOT NULL, label TEXT, active BOOLEAN DEFAULT true, created_at TIMESTAMPTZ DEFAULT NOW())");
+  await sql("CREATE INDEX IF NOT EXISTS idx_interim_cards_uid_active ON interim_cards(uid) WHERE active=true");
+
+  // interim_cards_creations : compteur (carte, jour) pour limiter la création
+  //   à 1 nouveau worker par carte par jour (anti-abus). PK composite.
+  await sql("CREATE TABLE IF NOT EXISTS interim_cards_creations (card_uid VARCHAR(10) NOT NULL, date DATE NOT NULL, count INT DEFAULT 0, PRIMARY KEY (card_uid, date))");
 }
 
 async function issueSession(role, workerId, hours) {
