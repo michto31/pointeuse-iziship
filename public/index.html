@@ -55,8 +55,11 @@ body{font-family:'Plus Jakarta Sans',-apple-system,sans-serif;background:var(--b
 .action-departure{background:var(--red-light);color:var(--red)}.action-departure .icon-circle{background:var(--red);color:#fff}.action-departure:hover{border-color:var(--red)}
 .action-break-start{background:var(--orange-light);color:#B45309}.action-break-start .icon-circle{background:var(--orange);color:#fff}.action-break-start:hover{border-color:var(--orange)}
 .action-break-end{background:var(--purple-light);color:var(--purple)}.action-break-end .icon-circle{background:var(--purple);color:#fff}.action-break-end:hover{border-color:var(--purple)}
-/* V2 admin — bouton unique avec couleur selon état du worker sélectionné */
-.admin-punch-btn{padding:18px 14px;font-size:14px;transition:all .15s}
+/* V2 admin — bouton unique avec couleur selon état du worker sélectionné.
+   Quand le grid contient ce bouton, on bascule en 1 seule colonne pour qu'il
+   s'aligne proprement (vs grid 2-cols hérité des 4 anciens boutons). */
+.action-grid:has(.admin-punch-btn){grid-template-columns:1fr}
+.admin-punch-btn{max-width:480px;margin:0 auto;padding:20px 16px;font-size:16px;transition:all .15s}
 .admin-punch-btn[hidden]{display:none !important}
 .admin-punch-btn.admin-punch-entry{background:var(--green-light);color:var(--green)}
 .admin-punch-btn.admin-punch-entry .icon-circle{background:var(--green);color:#fff}
@@ -621,7 +624,7 @@ Changer d&#39;utilisateur
 <!-- V2 admin — 1 seul bouton "Pointer", couleur dynamique selon &eacute;tat
      du worker s&eacute;lectionn&eacute; (vert=entr&eacute;e, rouge=sortie). Cach&eacute; tant
      qu'aucun salari&eacute; n'est s&eacute;lectionn&eacute; dans le dropdown. -->
-<button class="action-btn admin-punch-btn" type="button" id="adminPunchBtn" data-action="admin-punch" hidden style="grid-column:1/-1;">
+<button class="action-btn admin-punch-btn" type="button" id="adminPunchBtn" data-action="admin-punch" hidden>
 <div class="icon-circle"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg></div>
 <span id="adminPunchLabel">Pointer</span>
 </button>
@@ -1932,7 +1935,10 @@ var editingRecId=null;
 var editBreaks=[];
 
 function openEditModal(rid){
-  var recs=lR();var r=recs.find(function(x){return x.id===rid;});
+  // V2 — coerce les 2 côtés en string : rid arrive en string depuis onclick
+  // (interpolation HTML), x.id est number (SERIAL int côté API). Le === strict
+  // échouait silencieusement → bouton edit qui ne réagissait pas au clic.
+  var recs=lR();var r=recs.find(function(x){return String(x.id)===String(rid);});
   if(!r)return;
   editingRecId=rid;
   document.getElementById('editWorkerName').textContent=r.workerName+' \u2014 '+r.date;
