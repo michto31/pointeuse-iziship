@@ -329,6 +329,19 @@ body.borne-mode{overflow:hidden;height:100vh}
 .admin-pending-actions{display:flex;gap:6px;flex-shrink:0}
 .admin-pending-empty{text-align:center;color:var(--text3);padding:24px;font-style:italic}
 
+/* Sync OneDrive — carte compacte 1 ligne avec bouton + statut */
+.sync-card{background:var(--white);border:1px solid var(--border-light);border-radius:10px;padding:14px 18px;margin-bottom:16px}
+.sync-card-main{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.sync-card-icon{font-size:24px;flex-shrink:0}
+.sync-card-text{flex:1;min-width:200px}
+.sync-card-title{font-weight:600;color:var(--text);font-size:14px}
+.sync-card-status{font-size:12px;color:var(--text3);margin-top:3px}
+.sync-card-status.running{color:var(--accent);font-weight:500}
+.sync-card-status.failed{color:var(--red);font-weight:500}
+#syncBtn:disabled{opacity:.55;cursor:not-allowed}
+#syncBtn .sync-spinner{display:inline-block;width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:syncSpin .7s linear infinite;margin-right:6px;vertical-align:-2px}
+@keyframes syncSpin{to{transform:rotate(360deg)}}
+
 .punch-loading{text-align:center;color:var(--text3);padding:40px;font-size:14px;grid-column:1 / -1}
 
 .punch-b-inner,.punch-c-inner,.punch-d-inner,.punch-e-inner{max-width:520px;margin:0 auto;width:100%;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px}
@@ -612,6 +625,18 @@ Changer d&#39;utilisateur
 <div class="admin-pending-icon">&#128276;</div>
 <div class="admin-pending-text"><span id="adminPendingCount">0</span> nouvel(le) int&eacute;rimaire(s) cr&eacute;&eacute;(s) &agrave; la borne &mdash; &agrave; valider.</div>
 <button class="btn btn-primary btn-sm" type="button" data-action="admin-pending-open">Voir</button>
+</div>
+
+<!-- Sync OneDrive — bouton + historique 1 ligne -->
+<div class="sync-card">
+<div class="sync-card-main">
+<div class="sync-card-icon">&#128228;</div>
+<div class="sync-card-text">
+<div class="sync-card-title">Sync OneDrive</div>
+<div class="sync-card-status" id="syncCardStatus">Chargement&hellip;</div>
+</div>
+<button class="btn btn-primary btn-sm" type="button" id="syncBtn" data-action="sync-request">Sync OneDrive maintenant</button>
+</div>
 </div>
 
 <div class="pointage-grid">
@@ -1135,6 +1160,7 @@ function showAdminView(){
   document.getElementById('adminScreen').style.display='';
   // Phase 6 ext : refresh banner pending au switch admin.
   if(typeof loadAdminPending==='function')loadAdminPending();
+  if(typeof loadSyncRecent==='function')loadSyncRecent();
 }
 function showEmployeeView(w){
   document.getElementById('loginScreen').style.display='none';
@@ -4472,6 +4498,146 @@ async function deleteAdminPending(workerId){
 }
 
 
+// ═══ Sync OneDrive — déclenchement à distance via polling agent ═══
+// Le bouton admin POST /api/sync/request → file une demande. L'agent local
+// (poll-loop.mjs sur Mac) prend en main, exécute run.mjs, signale le done.
+// Le front poll /api/sync/recent toutes les 5s pour refléter l'état.
+
+var _syncPollTimer=null;
+var _syncPollStartedAt=0;
+var _syncWatchedId=null;
+var SYNC_POLL_MS=5000;
+var SYNC_POLL_MAX_MS=5*60*1000;
+
+function syncRelativeTime(iso){
+  if(!iso)return '';
+  var t=new Date(iso).getTime();
+  if(isNaN(t))return '';
+  var diff=Math.max(0,Math.floor((Date.now()-t)/1000));
+  if(diff<60)return 'il y a '+diff+'s';
+  if(diff<3600)return 'il y a '+Math.floor(diff/60)+' min';
+  if(diff<86400)return 'il y a '+Math.floor(diff/3600)+'h';
+  return 'il y a '+Math.floor(diff/86400)+'j';
+}
+
+function renderSyncCard(syncs){
+  var statusEl=document.getElementById('syncCardStatus');
+  var btn=document.getElementById('syncBtn');
+  if(!statusEl)return;
+  statusEl.classList.remove('running','failed');
+  if(!syncs || !syncs.length){
+    statusEl.textContent='Jamais synchronisé.';
+    if(btn && !_syncPollTimer)btn.disabled=false;
+    return;
+  }
+  var last=syncs[0];
+  if(last.status==='pending' || last.status==='running'){
+    var since=last.started_at||last.requested_at;
+    statusEl.textContent='Sync '+last.status+' '+syncRelativeTime(since)+'…';
+    statusEl.classList.add('running');
+    if(btn)btn.disabled=true;
+    return;
+  }
+  if(last.status==='failed'){
+    statusEl.textContent='Dernière sync : '+syncRelativeTime(last.completed_at)+' — échec ('+(last.error_message||'erreur inconnue').substring(0,80)+')';
+    statusEl.classList.add('failed');
+    if(btn && !_syncPollTimer)btn.disabled=false;
+    return;
+  }
+  var n=last.files_generated||0;
+  statusEl.textContent='Dernière sync : '+syncRelativeTime(last.completed_at)+' — '+n+' fichier'+(n>1?'s':'')+' ✅';
+  if(btn && !_syncPollTimer)btn.disabled=false;
+}
+
+async function loadSyncRecent(){
+  try{
+    var d=await apiGet('sync/recent');
+    var syncs=(d && d.syncs)||[];
+    renderSyncCard(syncs);
+    return syncs;
+  }catch(e){
+    return [];
+  }
+}
+
+async function doSyncRequest(){
+  var btn=document.getElementById('syncBtn');
+  var statusEl=document.getElementById('syncCardStatus');
+  if(btn)btn.disabled=true;
+  if(btn)btn.innerHTML='<span class="sync-spinner"></span>Envoi de la demande…';
+  try{
+    var resp=await apiPost('sync/request',{mode:'both'});
+    _syncWatchedId=resp.sync_id;
+    if(statusEl){
+      statusEl.textContent='Demande envoyée — en attente de l’agent…';
+      statusEl.classList.add('running');
+      statusEl.classList.remove('failed');
+    }
+    if(btn)btn.innerHTML='<span class="sync-spinner"></span>Sync en cours…';
+    startSyncPolling();
+  }catch(e){
+    if(btn){btn.disabled=false;btn.textContent='Sync OneDrive maintenant';}
+    if(e && e.message && e.message.indexOf('en cours')>=0){
+      toast('Sync déjà en cours, suivi du statut…','warning');
+      var existing=await loadSyncRecent();
+      if(existing.length){_syncWatchedId=existing[0].id;startSyncPolling();}
+    }else{
+      toast('Erreur : '+(e.message||'inconnue'),'error');
+    }
+  }
+}
+
+function startSyncPolling(){
+  stopSyncPolling();
+  _syncPollStartedAt=Date.now();
+  _syncPollTimer=setInterval(syncPollTick,SYNC_POLL_MS);
+  syncPollTick();
+}
+
+function stopSyncPolling(){
+  if(_syncPollTimer){clearInterval(_syncPollTimer);_syncPollTimer=null;}
+}
+
+async function syncPollTick(){
+  var elapsed=Date.now()-_syncPollStartedAt;
+  if(elapsed>SYNC_POLL_MAX_MS){
+    stopSyncPolling();
+    var btn0=document.getElementById('syncBtn');
+    if(btn0){btn0.disabled=false;btn0.textContent='Sync OneDrive maintenant';}
+    toast('Sync toujours en cours après 5 min, vérifie plus tard.','warning');
+    await loadSyncRecent();
+    return;
+  }
+  var syncs;
+  try{syncs=await apiGet('sync/recent');syncs=(syncs && syncs.syncs)||[];}
+  catch(e){return;}
+  var watched=null;
+  if(_syncWatchedId){
+    for(var i=0;i<syncs.length;i++){if(syncs[i].id===_syncWatchedId){watched=syncs[i];break;}}
+  }
+  if(!watched && syncs.length)watched=syncs[0];
+  renderSyncCard(syncs);
+  if(!watched)return;
+  if(watched.status==='done'){
+    stopSyncPolling();
+    var n=watched.files_generated||0;
+    toast('Sync OneDrive terminée — '+n+' fichier'+(n>1?'s':'')+' généré'+(n>1?'s':''),'success');
+    var btn1=document.getElementById('syncBtn');
+    if(btn1){btn1.disabled=false;btn1.textContent='Sync OneDrive maintenant';}
+    _syncWatchedId=null;
+    return;
+  }
+  if(watched.status==='failed'){
+    stopSyncPolling();
+    toast('Sync échouée : '+(watched.error_message||'erreur inconnue').substring(0,120),'error');
+    var btn2=document.getElementById('syncBtn');
+    if(btn2){btn2.disabled=false;btn2.textContent='Sync OneDrive maintenant';}
+    _syncWatchedId=null;
+    return;
+  }
+}
+
+
 // Event delegation pour les boutons borne-start (boot), borne-retry (error)
 // et tous les boutons des écrans intérim partagés.
 if(document.getElementById('borneScreen')){
@@ -4503,6 +4669,7 @@ document.addEventListener('click',function(e){
   if(act==='admin-pending-approve'){approveAdminPending(b.getAttribute('data-id'));return;}
   if(act==='admin-pending-delete'){deleteAdminPending(b.getAttribute('data-id'));return;}
   if(act==='admin-punch'){doAdminPunch();return;}
+  if(act==='sync-request'){doSyncRequest();return;}
 });
 
 // V2 admin — refresh couleur/visibilité du bouton Pointer à chaque changement

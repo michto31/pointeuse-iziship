@@ -167,7 +167,7 @@ async function closeOrphanPointages(workerId) {
 
 // Types d'événements security_events. Non contraint en DB (TEXT libre) mais toute
 // insertion doit passer par logSecurityEvent() qui vérifie le type.
-var SECURITY_EVENT_TYPES = { pin_fail: true, pin_lock: true, pin_create: true, pin_reset: true, station_regen: true, station_secret_view: true, rfid_enroll: true, rfid_unenroll: true, rfid_clock: true, rfid_unknown_card: true, rfid_locked_card: true, rfid_station_invalid: true, pointage_orphan_closed: true, rfid_clock_via_group_card: true, worker_created_via_borne: true, worker_approved: true, interim_card_limit_exceeded: true, interim_create_global_limit_exceeded: true };
+var SECURITY_EVENT_TYPES = { pin_fail: true, pin_lock: true, pin_create: true, pin_reset: true, station_regen: true, station_secret_view: true, rfid_enroll: true, rfid_unenroll: true, rfid_clock: true, rfid_unknown_card: true, rfid_locked_card: true, rfid_station_invalid: true, pointage_orphan_closed: true, rfid_clock_via_group_card: true, worker_created_via_borne: true, worker_approved: true, interim_card_limit_exceeded: true, interim_create_global_limit_exceeded: true, sync_requested: true };
 async function logSecurityEvent(eventType, workerId, stationId, details) {
   if (!SECURITY_EVENT_TYPES[eventType]) throw new Error("Invalid security event type: " + eventType);
   await sql(
@@ -743,6 +743,97 @@ exports.handler = async function (event) {
         worker_name: approveResult.name
       });
       return json({ ok: true });
+    }
+
+    // ═══ Sync OneDrive — queue polling pour agent local ═══════════════════
+    // 4 routes : 2 admin (request, recent) + 2 agent-token (pending, complete).
+    // Le SYNC_AGENT_TOKEN est partagé entre Netlify env et l'agent .env.local.
+    // Si invalide → 401 sans détail (best-effort anti-leak).
+
+    // POST /api/sync/request [admin] — file une demande de sync. Refuse 409
+    // s'il y a déjà une demande pending ou running (sauf si la running est
+    // stale > 10min, auquel cas on l'annule auto).
+    if (method === "POST" && path === "sync/request") {
+      var syncReqAuth = await requireAuth(event, "admin");
+      var syncMode = String((body && body.mode) || "both");
+      if (syncMode !== "weekly" && syncMode !== "monthly" && syncMode !== "both") {
+        return err("mode invalide (weekly|monthly|both)");
+      }
+      // Recovery : marque comme 'failed' les running stale > 10min (agent crashed).
+      await sql(
+        "UPDATE sync_requests SET status='failed', completed_at=NOW(), " +
+        "error_message='Agent timeout (>10 min sans complete)' " +
+        "WHERE status='running' AND started_at < NOW() - INTERVAL '10 minutes'"
+      );
+      // Vérifie qu'il n'y a pas déjà une demande active.
+      var syncActive = await sql1(
+        "SELECT id, status FROM sync_requests WHERE status IN ('pending','running') ORDER BY id LIMIT 1"
+      );
+      if (syncActive) {
+        return json({ error: "Sync déjà en cours", sync_id: syncActive.id, status: syncActive.status }, 409);
+      }
+      var syncRow = await sql1(
+        "INSERT INTO sync_requests (mode, requested_by) VALUES ($1, $2) " +
+        "RETURNING id, status, mode, requested_at",
+        [syncMode, syncReqAuth.worker_id]
+      );
+      await logSecurityEvent("sync_requested", null, null, {
+        sync_id: syncRow.id, mode: syncMode, admin_worker_id: syncReqAuth.worker_id
+      });
+      return json({ ok: true, sync_id: syncRow.id, status: syncRow.status, mode: syncRow.mode }, 201);
+    }
+
+    // GET /api/sync/pending [PUBLIC, X-Sync-Agent-Token] — appelé par l'agent
+    // local en boucle de polling. Atomique : UPDATE...RETURNING pour qu'un
+    // poll concurrent ne récupère pas la même demande.
+    if (method === "GET" && path === "sync/pending") {
+      var syncPendHdr = (event.headers && (event.headers["x-sync-agent-token"] || event.headers["X-Sync-Agent-Token"])) || "";
+      var syncToken = process.env.SYNC_AGENT_TOKEN || "";
+      if (!syncToken || syncPendHdr !== syncToken) {
+        return json({ error: "Unauthorized" }, 401);
+      }
+      // Atomic claim : UPDATE le plus ancien pending → running, RETURNING.
+      // Single-statement = atomique côté Neon HTTP. Pour multi-agent on
+      // ajouterait FOR UPDATE SKIP LOCKED, mais V1 = 1 seul agent.
+      var syncClaimed = await sql1(
+        "UPDATE sync_requests SET status='running', started_at=NOW() " +
+        "WHERE id = (SELECT id FROM sync_requests WHERE status='pending' ORDER BY id LIMIT 1) " +
+        "RETURNING id, mode, requested_at"
+      );
+      if (!syncClaimed) return json({ sync_id: null });
+      return json({ sync_id: syncClaimed.id, mode: syncClaimed.mode, requested_at: syncClaimed.requested_at });
+    }
+
+    // POST /api/sync/:id/complete [PUBLIC, X-Sync-Agent-Token] — l'agent
+    // signale la fin d'une sync (success ou failed).
+    if (method === "POST" && seg[0] === "sync" && seg[1] && seg[2] === "complete" && !seg[3]) {
+      var syncCompHdr = (event.headers && (event.headers["x-sync-agent-token"] || event.headers["X-Sync-Agent-Token"])) || "";
+      var syncToken2 = process.env.SYNC_AGENT_TOKEN || "";
+      if (!syncToken2 || syncCompHdr !== syncToken2) {
+        return json({ error: "Unauthorized" }, 401);
+      }
+      var syncCompId = parseInt(seg[1], 10);
+      if (!syncCompId) return err("sync id invalide");
+      var syncCompSuccess = !!(body && body.success);
+      var syncCompFiles = parseInt((body && body.files_generated) || 0, 10) || 0;
+      var syncCompErr = String((body && body.error_message) || "").substring(0, 500) || null;
+      var syncCompUpdated = await sql1(
+        "UPDATE sync_requests SET status=$1, completed_at=NOW(), files_generated=$2, error_message=$3 " +
+        "WHERE id=$4 AND status='running' RETURNING id, status",
+        [syncCompSuccess ? "done" : "failed", syncCompFiles, syncCompErr, syncCompId]
+      );
+      if (!syncCompUpdated) return err("Sync introuvable ou déjà terminée", 404);
+      return json({ ok: true });
+    }
+
+    // GET /api/sync/recent [admin] — historique 10 dernières syncs pour l'UI.
+    if (method === "GET" && path === "sync/recent") {
+      await requireAuth(event, "admin");
+      var syncRecent = await sql(
+        "SELECT id, status, mode, requested_at, started_at, completed_at, files_generated, error_message " +
+        "FROM sync_requests ORDER BY id DESC LIMIT 10"
+      );
+      return json({ syncs: syncRecent });
     }
 
     // Minimal public endpoint pour la grille d'accueil du flow salarié (Phase 5).
@@ -1390,6 +1481,26 @@ async function initDB() {
   // Au prochain scan ils feront un EXIT normal qui fermera le record et le
   // break ouvert (cf api.js POST /api/clock V2).
   await sql("UPDATE workers SET last_clock_state='at_work' WHERE last_clock_state='on_break'");
+
+  // ═══ Sync OneDrive — queue polling pour agent local ═══
+  // Pattern : front admin clique "Sync" → INSERT pending. Agent local sur
+  // Mac poll /api/sync/pending toutes les 30s, prend la 1re demande, exécute
+  // run.mjs, POST /complete avec le résultat. Permet de déclencher des syncs
+  // RH à distance sans accès SSH au Mac.
+  await sql(
+    "CREATE TABLE IF NOT EXISTS sync_requests (" +
+    "id SERIAL PRIMARY KEY, " +
+    "status TEXT NOT NULL DEFAULT 'pending', " +
+    "mode TEXT NOT NULL DEFAULT 'both', " +
+    "requested_by INT, " +
+    "requested_at TIMESTAMPTZ DEFAULT NOW(), " +
+    "started_at TIMESTAMPTZ, " +
+    "completed_at TIMESTAMPTZ, " +
+    "files_generated INT, " +
+    "error_message TEXT, " +
+    "agent_log_url TEXT)"
+  );
+  await sql("CREATE INDEX IF NOT EXISTS idx_sync_pending ON sync_requests(status) WHERE status='pending'");
 }
 
 async function issueSession(role, workerId, hours) {
