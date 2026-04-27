@@ -119,27 +119,28 @@ async function closeOrphanPointages(workerId) {
     return;
   }
 
-  var workerSched = await sql1("SELECT sched_in, sched_out FROM workers WHERE id=$1", [workerId]);
-  var duration = computeShiftDuration(
-    workerSched && workerSched.sched_in,
-    workerSched && workerSched.sched_out
-  );
+  // V2 — auto-departure = sched_out tel quel pour la date concernée.
+  // Fallback arrival + 480 min si sched_out absent, invalide, ou ≤ arrival
+  // (worker arrivé après son heure de fin théorique — cas pathologique).
+  var workerSched = await sql1("SELECT sched_out FROM workers WHERE id=$1", [workerId]);
   var arrivalMin = hhmmToMin(orphan.arrival);
-  var autoDepartureHHMM = minToHHMM(arrivalMin + duration);
+  var schedOutHHMM = workerSched && workerSched.sched_out;
+  var autoDepartureHHMM;
+  if (schedOutHHMM && /^\d{2}:\d{2}$/.test(schedOutHHMM) && hhmmToMin(schedOutHHMM) > arrivalMin) {
+    autoDepartureHHMM = schedOutHHMM;
+  } else {
+    autoDepartureHHMM = minToHHMM((arrivalMin + 480) % 1440);
+  }
 
-  // Si un break était ouvert, le clôturer avant le departure (break_end =
-  // break_start + 30min, fallback : arrival+1min si start invalide).
+  // Si un break était ouvert, on le ferme à autoDepartureHHMM (V2 simple :
+  // la pause couvre du start au sched_out, puis worker repart). Précédait V1
+  // qui fermait à break_start + 30min — moins prédictible.
   var breaks = orphan.breaks;
   if (typeof breaks === "string") { try { breaks = JSON.parse(breaks); } catch (e) { breaks = []; } }
   if (!Array.isArray(breaks)) breaks = [];
   var hadOpenBreak = breaks.length > 0 && !breaks[breaks.length - 1].end;
   if (hadOpenBreak) {
-    var lastBreak = breaks[breaks.length - 1];
-    if (lastBreak.start && /^\d{2}:\d{2}$/.test(lastBreak.start)) {
-      breaks[breaks.length - 1].end = minToHHMM(hhmmToMin(lastBreak.start) + 30);
-    } else {
-      breaks[breaks.length - 1].end = minToHHMM(arrivalMin + 1);
-    }
+    breaks[breaks.length - 1].end = autoDepartureHHMM;
   }
 
   // UPDATE record + reset worker → idle. Pas de transaction explicite (Neon
@@ -1018,138 +1019,136 @@ exports.handler = async function (event) {
       });
     }
 
-    // POST /api/clock [auth worker] — pointage arrivée/départ/pauses.
-    // Worker identité = session (pas de worker_id dans le body, évite dup source de bug).
-    // station_token (pas station_id) = preuve de présence physique à CHAQUE clock.
-    // State machine appliquée avant tout écrit. Atomicité record + workers.last_clock_state
-    // via sqlTx (batch transaction Neon Serializable).
+    // POST /api/clock [auth worker] — V2 : 1 scan = 1 timestamp neutre.
+    // Le serveur décide entry/exit selon last_clock_state (idle ↔ at_work).
+    // Body: {station_token, kind?} — kind ignoré (rétrocompat 'arrival'|
+    // 'departure'|'break_start'|'break_end'|'punch' accepté). Logique :
+    //   - state=idle  → ENTRY : INSERT (premier scan jour) ou réouverture
+    //     d'un record clos (transforme dep → break)
+    //   - state=at_work → EXIT : UPDATE departure=NOW (ferme tout break ouvert
+    //     hérité V1 si présent)
+    // Multi-paires intra-jour : 1 SEUL record par (worker, date), les pauses
+    // s'accumulent dans records.breaks JSONB. Toute donnée V1 héritée
+    // (multi-records, breaks ouverts) est fusionnée best-effort à la prochaine
+    // transition.
     if (method === "POST" && path === "clock") {
       var clkAuth = await requireAuth(event, "worker");
       var clkWorkerId = clkAuth.worker_id;
       if (!clkWorkerId) return err("Session sans worker_id", 401);
 
-      var clkAction = body && body.action;
-      if (!STATE_TRANSITIONS[clkAction]) return err("action invalide (attendu: " + Object.keys(STATE_TRANSITIONS).join(", ") + ")", 400);
+      // V2 : kind est purement informatif. Tous les kinds legacy mappent vers
+      // la bascule unique ; retour {action:'entry'|'exit'} reflète l'effet réel.
+      var clkKindRaw = (body && body.kind) || "punch";
+      var CLK_KINDS_OK = { punch: 1, arrival: 1, departure: 1, break_start: 1, break_end: 1 };
+      if (!CLK_KINDS_OK[clkKindRaw]) return err("kind invalide", 400);
 
       var clkStation = await verifyStationToken(body && body.station_token);
       if (!clkStation) return err("Station invalide", 401);
 
-      // Phase 6 — auto-clôture défensive des records orphelins. Le borne RFID
-      // a déjà fait l'appel via /api/auth/rfid juste avant, donc c'est un no-op
-      // pour ce flux. Reste utile pour le flux PIN qui passe directement ici
-      // (le worker peut alors enchaîner en 'arrival' après reset → 'idle').
+      // Auto-clôture défensive des records orphelins du jour précédent.
       await closeOrphanPointages(clkWorkerId);
 
-      // Source de vérité = DB workers.last_clock_state (pas la session, qui pourrait dater).
       var clkWorker = await sql1("SELECT id, name, agency, last_clock_state FROM workers WHERE id=$1", [clkWorkerId]);
       if (!clkWorker) return err("Worker introuvable", 404);
       var clkCurrentState = clkWorker.last_clock_state || "idle";
+      // V2 : on_break legacy → traité comme at_work (worker a une session ouverte)
+      if (clkCurrentState === "on_break") clkCurrentState = "at_work";
 
-      // Validation transition
-      var clkSpec = STATE_TRANSITIONS[clkAction];
-      if (clkSpec.from.indexOf(clkCurrentState) < 0) {
-        return json({
-          error: "Action invalide pour l'état actuel",
-          current_state: clkCurrentState,
-          allowed_actions: allowedActionsFor(clkCurrentState)
-        }, 409);
-      }
-      var clkNewState = clkSpec.to;
       var clkTime = getParisHHMM();
       var clkDate = getParisDate();
 
-      if (clkAction === "arrival") {
-        // INSERT nouveau record + UPDATE state. Plusieurs records par jour autorisés
-        // (journée split 9h-12h / 14h-18h).
-        var arrivalTx = await sqlTx([
+      // Le record du jour s'il existe (un seul en V2, ouvert ou clos).
+      var clkTodayRec = await sql1(
+        "SELECT * FROM records WHERE worker_id=$1 AND date=$2 ORDER BY id DESC LIMIT 1",
+        [clkWorkerId, clkDate]
+      );
+
+      if (clkCurrentState === "idle") {
+        // ENTRY
+        if (!clkTodayRec) {
+          // Cas 1 : première entrée du jour → INSERT
+          var entryTx = await sqlTx([
+            {
+              query: "INSERT INTO records (worker_id, worker_name, agency, date, arrival, station_id, breaks) " +
+                     "VALUES ($1, $2, $3, $4, $5, $6, '[]'::jsonb) RETURNING *",
+              params: [clkWorkerId, clkWorker.name, clkWorker.agency || "", clkDate, clkTime, clkStation.id]
+            },
+            {
+              query: "UPDATE workers SET last_clock_state='at_work' WHERE id=$1 RETURNING id",
+              params: [clkWorkerId]
+            }
+          ]);
+          return json({ ok: true, action: "entry", time: clkTime, record: entryTx[0][0] }, 201);
+        }
+        if (clkTodayRec.departure) {
+          // Cas 3 (retour de pause) ou split day soir : record clos existe.
+          // On transforme ancien departure → break {start:dep, end:NOW},
+          // departure devient null (record réouvert).
+          var clkBreaks3 = clkTodayRec.breaks;
+          if (typeof clkBreaks3 === "string") { try { clkBreaks3 = JSON.parse(clkBreaks3); } catch (e) { clkBreaks3 = []; } }
+          if (!Array.isArray(clkBreaks3)) clkBreaks3 = [];
+          clkBreaks3.push({ start: clkTodayRec.departure, end: clkTime });
+          var reopenTx = await sqlTx([
+            {
+              query: "UPDATE records SET departure=NULL, breaks=$1::jsonb, updated_at=NOW() WHERE id=$2 RETURNING *",
+              params: [JSON.stringify(clkBreaks3), clkTodayRec.id]
+            },
+            {
+              query: "UPDATE workers SET last_clock_state='at_work' WHERE id=$1 RETURNING id",
+              params: [clkWorkerId]
+            }
+          ]);
+          return json({ ok: true, action: "entry", time: clkTime, record: reopenTx[0][0] });
+        }
+        // État incohérent : state=idle mais record du jour ouvert (departure null).
+        // Défensif : bascule juste le state, laisse le record tel quel.
+        await sql("UPDATE workers SET last_clock_state='at_work' WHERE id=$1", [clkWorkerId]);
+        return json({ ok: true, action: "entry", time: clkTime, record: clkTodayRec, warning: "state_mismatch_entry" });
+      }
+
+      // clkCurrentState === "at_work" → EXIT
+      if (!clkTodayRec) {
+        // État incohérent : state=at_work mais aucun record du jour. Défensif :
+        // INSERT un record arrival=departure=clkTime (pointage ponctuel) + idle.
+        var ghostTx = await sqlTx([
           {
-            query: "INSERT INTO records (worker_id, worker_name, agency, date, arrival, station_id, breaks) " +
-                   "VALUES ($1, $2, $3, $4, $5, $6, '[]'::jsonb) RETURNING *",
+            query: "INSERT INTO records (worker_id, worker_name, agency, date, arrival, departure, station_id, breaks) " +
+                   "VALUES ($1, $2, $3, $4, $5, $5, $6, '[]'::jsonb) RETURNING *",
             params: [clkWorkerId, clkWorker.name, clkWorker.agency || "", clkDate, clkTime, clkStation.id]
           },
           {
-            query: "UPDATE workers SET last_clock_state=$1 WHERE id=$2 RETURNING id",
-            params: [clkNewState, clkWorkerId]
+            query: "UPDATE workers SET last_clock_state='idle' WHERE id=$1 RETURNING id",
+            params: [clkWorkerId]
           }
         ]);
-        return json({ ok: true, action: clkAction, new_state: clkNewState, record: arrivalTx[0][0] }, 201);
+        return json({ ok: true, action: "exit", time: clkTime, record: ghostTx[0][0], warning: "state_mismatch_exit" });
       }
-
-      // Non-arrival actions : on update la ligne ouverte du jour (ORDER BY id DESC LIMIT 1
-      // gère le cas d'une journée split avec un record de matin fermé + un record après-midi ouvert).
-      var openRec = await sql1(
-        "SELECT * FROM records WHERE worker_id=$1 AND date=$2 AND departure IS NULL " +
-        "ORDER BY id DESC LIMIT 1",
-        [clkWorkerId, clkDate]
-      );
-      if (!openRec) {
-        return json({
-          error: "Aucun pointage ouvert pour aujourd'hui",
-          current_state: clkCurrentState,
-          allowed_actions: allowedActionsFor(clkCurrentState)
-        }, 409);
-      }
-      // breaks peut revenir en string JSON selon le driver — normaliser.
-      var clkBreaks = openRec.breaks;
-      if (typeof clkBreaks === "string") { try { clkBreaks = JSON.parse(clkBreaks); } catch (e) { clkBreaks = []; } }
-      if (!Array.isArray(clkBreaks)) clkBreaks = [];
-
-      if (clkAction === "break_start") {
-        clkBreaks.push({ start: clkTime });
-        var bsTx = await sqlTx([
-          {
-            query: "UPDATE records SET breaks=$1::jsonb, updated_at=NOW() WHERE id=$2 RETURNING *",
-            params: [JSON.stringify(clkBreaks), openRec.id]
-          },
-          {
-            query: "UPDATE workers SET last_clock_state=$1 WHERE id=$2 RETURNING id",
-            params: [clkNewState, clkWorkerId]
-          }
-        ]);
-        return json({ ok: true, action: clkAction, new_state: clkNewState, record: bsTx[0][0] });
-      }
-
-      if (clkAction === "break_end") {
-        if (clkBreaks.length === 0 || clkBreaks[clkBreaks.length - 1].end) {
-          return err("Aucune pause ouverte à fermer", 409);
-        }
-        clkBreaks[clkBreaks.length - 1].end = clkTime;
-        var beTx = await sqlTx([
-          {
-            query: "UPDATE records SET breaks=$1::jsonb, updated_at=NOW() WHERE id=$2 RETURNING *",
-            params: [JSON.stringify(clkBreaks), openRec.id]
-          },
-          {
-            query: "UPDATE workers SET last_clock_state=$1 WHERE id=$2 RETURNING id",
-            params: [clkNewState, clkWorkerId]
-          }
-        ]);
-        return json({ ok: true, action: clkAction, new_state: clkNewState, record: beTx[0][0] });
-      }
-
-      // departure — si state=on_break, auto-ferme la pause ouverte avec auto_closed:true
-      // (flag lu plus tard par le module RH pour afficher un warning dans les PDFs).
+      // Cas normal : ferme departure à NOW. Si un break est ouvert (héritage
+      // V1 ou bug), on le ferme aussi à NOW avec flag auto_closed.
+      var clkExitBreaks = clkTodayRec.breaks;
+      if (typeof clkExitBreaks === "string") { try { clkExitBreaks = JSON.parse(clkExitBreaks); } catch (e) { clkExitBreaks = []; } }
+      if (!Array.isArray(clkExitBreaks)) clkExitBreaks = [];
       var autoClosedBreak = false;
-      if (clkCurrentState === "on_break" && clkBreaks.length > 0 && !clkBreaks[clkBreaks.length - 1].end) {
-        clkBreaks[clkBreaks.length - 1].end = clkTime;
-        clkBreaks[clkBreaks.length - 1].auto_closed = true;
+      if (clkExitBreaks.length > 0 && !clkExitBreaks[clkExitBreaks.length - 1].end) {
+        clkExitBreaks[clkExitBreaks.length - 1].end = clkTime;
+        clkExitBreaks[clkExitBreaks.length - 1].auto_closed = true;
         autoClosedBreak = true;
       }
-      var depTx = await sqlTx([
+      var exitTx = await sqlTx([
         {
           query: "UPDATE records SET departure=$1, breaks=$2::jsonb, updated_at=NOW() WHERE id=$3 RETURNING *",
-          params: [clkTime, JSON.stringify(clkBreaks), openRec.id]
+          params: [clkTime, JSON.stringify(clkExitBreaks), clkTodayRec.id]
         },
         {
-          query: "UPDATE workers SET last_clock_state=$1 WHERE id=$2 RETURNING id",
-          params: [clkNewState, clkWorkerId]
+          query: "UPDATE workers SET last_clock_state='idle' WHERE id=$1 RETURNING id",
+          params: [clkWorkerId]
         }
       ]);
       return json({
         ok: true,
-        action: clkAction,
-        new_state: clkNewState,
-        record: depTx[0][0],
+        action: "exit",
+        time: clkTime,
+        record: exitTx[0][0],
         auto_closed_break: autoClosedBreak
       });
     }
@@ -1363,6 +1362,13 @@ async function initDB() {
   // interim_cards_creations : compteur (carte, jour) pour limiter la création
   //   à 1 nouveau worker par carte par jour (anti-abus). PK composite.
   await sql("CREATE TABLE IF NOT EXISTS interim_cards_creations (card_uid VARCHAR(10) NOT NULL, date DATE NOT NULL, count INT DEFAULT 0, PRIMARY KEY (card_uid, date))");
+
+  // ═══ Refacto V2 — pointages neutres (1 scan = 1 timestamp) ═══
+  // Migration one-shot idempotente : l'état 'on_break' n'existe plus en V2,
+  // les workers qui l'avaient sont basculés en 'at_work' (session ouverte).
+  // Au prochain scan ils feront un EXIT normal qui fermera le record et le
+  // break ouvert (cf api.js POST /api/clock V2).
+  await sql("UPDATE workers SET last_clock_state='at_work' WHERE last_clock_state='on_break'");
 }
 
 async function issueSession(role, workerId, hours) {
