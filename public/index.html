@@ -285,6 +285,38 @@ body.borne-mode{overflow:hidden;height:100vh}
 .borne-state-misconfig .borne-error-msg{color:#92400e}
 .borne-state-misconfig code{font-family:JetBrains Mono,monospace;background:#fde68a;padding:2px 6px;border-radius:4px;color:#92400e}
 
+/* ═══ Phase 6 ext — borne picker intérim ═══ */
+.borne-state-interim-agency,.borne-state-interim-workers,.borne-state-interim-create-form,.borne-state-interim-confirm-match{justify-content:flex-start;padding:60px 40px 40px}
+.borne-interim-title{font-size:36px;font-weight:700;color:var(--text);text-align:center;margin-bottom:32px;line-height:1.2}
+.borne-interim-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;width:100%;max-width:900px;margin:0 auto 24px;overflow-y:auto;max-height:60vh;padding:4px}
+.borne-interim-tile{padding:24px 18px;background:var(--white);border:2px solid var(--border);border-radius:14px;cursor:pointer;font-size:22px;font-weight:600;color:var(--text);text-align:center;transition:all .15s;font-family:inherit;line-height:1.2}
+.borne-interim-tile:hover,.borne-interim-tile:active{border-color:var(--accent);background:var(--accent-light);color:var(--accent);transform:translateY(-1px);box-shadow:var(--shadow)}
+.borne-interim-tile-state{display:block;font-size:13px;font-weight:500;color:var(--text3);margin-top:6px}
+.borne-interim-tile.pending{border-color:#fbbf24;background:#fef3c7}
+.borne-interim-tile.pending .borne-interim-tile-state{color:#92400e}
+.borne-interim-new{padding:18px 32px;font-size:20px;font-weight:600;background:var(--orange-light);color:#92400e;border:2px dashed #fbbf24;border-radius:12px;cursor:pointer;font-family:inherit;margin-bottom:12px}
+.borne-interim-new:hover{background:#fde68a}
+.borne-interim-cancel{margin-top:8px;padding:12px 24px;font-size:16px;background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--text2);cursor:pointer;font-family:inherit}
+.borne-interim-cancel:hover{border-color:var(--text2);color:var(--text)}
+.borne-interim-form{display:flex;flex-direction:column;gap:14px;width:100%;max-width:480px;margin:0 auto}
+.borne-interim-input{padding:18px 20px;font-size:22px;border:2px solid var(--border);border-radius:10px;font-family:inherit;outline:none;transition:border-color .15s}
+.borne-interim-input:focus{border-color:var(--accent)}
+.borne-interim-form .borne-btn-primary{margin-top:8px}
+
+/* ═══ Phase 6 ext — admin pending banner + modal ═══ */
+.admin-pending-banner{display:flex;align-items:center;gap:14px;padding:14px 18px;background:#fef3c7;border:1px solid #fbbf24;border-radius:10px;margin-bottom:16px}
+.admin-pending-banner[hidden]{display:none !important}
+.admin-pending-icon{font-size:24px;flex-shrink:0}
+.admin-pending-text{flex:1;font-size:14px;color:#92400e;font-weight:500}
+.admin-pending-text span{font-weight:700}
+.admin-pending-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--border-light);border-radius:8px;margin-bottom:10px}
+.admin-pending-row:last-child{margin-bottom:0}
+.admin-pending-info{flex:1;min-width:0}
+.admin-pending-name{font-weight:600;color:var(--text);font-size:14px}
+.admin-pending-meta{font-size:12px;color:var(--text3);margin-top:3px}
+.admin-pending-actions{display:flex;gap:6px;flex-shrink:0}
+.admin-pending-empty{text-align:center;color:var(--text3);padding:24px;font-style:italic}
+
 .punch-loading{text-align:center;color:var(--text3);padding:40px;font-size:14px;grid-column:1 / -1}
 
 .punch-b-inner,.punch-c-inner,.punch-d-inner,.punch-e-inner{max-width:520px;margin:0 auto;width:100%;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px}
@@ -565,6 +597,13 @@ Changer d&#39;utilisateur
 
 <!-- POINTAGE -->
 <div class="page active" id="page-pointage">
+<!-- Phase 6 ext — bandeau "workers en attente de validation" -->
+<div class="admin-pending-banner" id="adminPendingBanner" hidden>
+<div class="admin-pending-icon">&#128276;</div>
+<div class="admin-pending-text"><span id="adminPendingCount">0</span> nouvel(le) int&eacute;rimaire(s) cr&eacute;&eacute;(s) &agrave; la borne &mdash; &agrave; valider.</div>
+<button class="btn btn-primary btn-sm" type="button" data-action="admin-pending-open">Voir</button>
+</div>
+
 <div class="pointage-grid">
 <div>
 <div class="card" style="margin-bottom:16px;">
@@ -807,6 +846,14 @@ Bonjour ! Je suis votre assistant RH. Je peux analyser vos donn&#233;es de point
 </div>
 </div></div>
 
+<!-- MODAL ADMIN PENDING (Phase 6 ext) — workers cr&eacute;&eacute;s &agrave; la borne en attente -->
+<div class="modal-overlay" id="adminPendingModal">
+<div class="modal" style="max-width:640px;">
+<div class="modal-header">Int&eacute;rimaires &agrave; valider</div>
+<div class="modal-body" id="adminPendingBody"><div style="text-align:center;color:var(--text3);padding:24px;">Chargement&hellip;</div></div>
+<div class="modal-footer"><button class="btn btn-outline" type="button" data-action="admin-pending-close">Fermer</button></div>
+</div></div>
+
 <!-- MODAL RFID ASSOCIATION (Phase 6) — overlay top-level, ind&eacute;pendant de #addModal -->
 <div class="modal-overlay" id="rfidAssocModal">
 <div class="modal" style="max-width:480px;">
@@ -883,6 +930,38 @@ Bonjour ! Je suis votre assistant RH. Je peux analyser vos donn&#233;es de point
 <div class="borne-error-msg">Borne non configur&eacute;e &mdash; appelez l'admin</div>
 <div class="borne-error-sub">URL incompl&egrave;te&nbsp;: param&egrave;tre <code>station_token</code> manquant.</div>
 </div>
+
+<!-- ═══ Phase 6 ext — &eacute;crans cartes int&eacute;rim partag&eacute;es ═══ -->
+<div class="borne-state borne-state-interim-agency" hidden>
+<div class="borne-interim-title">Quelle agence&nbsp;?</div>
+<div class="borne-interim-grid" id="borneInterimAgencyGrid"></div>
+<button class="borne-interim-cancel" type="button" data-action="borne-interim-cancel">Annuler</button>
+</div>
+
+<div class="borne-state borne-state-interim-workers" hidden>
+<div class="borne-interim-title" id="borneInterimWorkersTitle">Choisissez votre nom</div>
+<div class="borne-interim-grid" id="borneInterimWorkersGrid"></div>
+<button class="borne-interim-new" type="button" data-action="borne-interim-new">+ Je suis nouveau</button>
+<button class="borne-interim-cancel" type="button" data-action="borne-interim-cancel">Annuler</button>
+</div>
+
+<div class="borne-state borne-state-interim-create-form" hidden>
+<div class="borne-interim-title" id="borneInterimCreateTitle">Cr&eacute;er votre fiche</div>
+<form class="borne-interim-form" id="borneInterimForm">
+<input type="text" class="borne-interim-input" id="borneInterimFirstName" placeholder="Pr&eacute;nom" autocomplete="given-name" autocapitalize="words" required>
+<input type="text" class="borne-interim-input" id="borneInterimLastName" placeholder="Nom" autocomplete="family-name" autocapitalize="words" required>
+<input type="tel" class="borne-interim-input" id="borneInterimPhone" placeholder="T&eacute;l&eacute;phone" autocomplete="tel" inputmode="tel" required>
+<button class="borne-btn-primary" type="submit" data-action="borne-interim-submit">Valider</button>
+</form>
+<button class="borne-interim-cancel" type="button" data-action="borne-interim-cancel">Annuler</button>
+</div>
+
+<div class="borne-state borne-state-interim-confirm-match" hidden>
+<div class="borne-interim-title">&Ecirc;tes-vous l'une de ces personnes&nbsp;?</div>
+<div class="borne-interim-grid" id="borneInterimMatchGrid"></div>
+<button class="borne-interim-new" type="button" data-action="borne-interim-confirm-none">Aucun, je suis nouveau</button>
+<button class="borne-interim-cancel" type="button" data-action="borne-interim-cancel">Annuler</button>
+</div>
 </section>
 
 <script>
@@ -912,6 +991,12 @@ var borneStateBackTimer=null;
 var borneRfidBuf='';
 var borneInitOnce=false;
 var borneStarting=false;
+// Phase 6 ext — state vars du flux carte intérim partagée
+var borneInterimCardUid=null;
+var borneInterimAgency=null;
+var borneInterimPendingForm=null;
+var borneInterimTimer=null;
+var BORNE_INTERIM_TIMEOUT_MS=30000;
 var RFID_DEDUP_MS=2000;
 var BORNE_RECOGNIZED_MS=3000;
 var BORNE_ERROR_MS=4000;
@@ -1026,6 +1111,8 @@ function showAdminView(){
   document.getElementById('loginScreen').style.display='none';
   document.getElementById('empScreen').style.display='none';
   document.getElementById('adminScreen').style.display='';
+  // Phase 6 ext : refresh banner pending au switch admin.
+  if(typeof loadAdminPending==='function')loadAdminPending();
 }
 function showEmployeeView(w){
   document.getElementById('loginScreen').style.display='none';
@@ -3764,9 +3851,22 @@ async function borneProcessScan(uid){
     }
     return;
   }
-  // Décide de l'action selon l'état + sched_out
+  // Phase 6 ext — carte intérim partagée : bascule sur le picker au lieu du
+  // flux clock direct. La session sera créée par /api/interim/clock OU
+  // /api/interim/create plus tard, après que le worker aura été choisi.
+  if(auth && auth.type==='interim_picker'){
+    borneInterimCardUid=auth.card_uid;
+    borneShowAgencyPicker(auth.agencies||[]);
+    return;
+  }
+  // Carte nominative : flux clock standard
   var action=borneDecideAction(auth.worker.last_clock_state,auth.worker.sched_out);
-  // POST /api/clock avec le token worker
+  await borneFinalizeClock(auth,action);
+}
+
+// Helper extrait : POST /api/clock + affichage recognized + cleanup. Réutilisé
+// par le flux nominal ET les flux interim (clock / create).
+async function borneFinalizeClock(auth,action){
   var clockResp;
   try{
     clockResp=await borneClock(auth.token,action);
@@ -3780,7 +3880,6 @@ async function borneProcessScan(uid){
     borneLogout(auth.token);
     return;
   }
-  // Succès : affiche, beep, logout, back to idle
   borneShowState('recognized',{name:auth.worker.name,action:clockResp.action||action,time:clockResp.time||''});
   borneBeep();
   borneLogout(auth.token);
@@ -3964,7 +4063,325 @@ function borneStartHeartbeat(){
   },ms);
 }
 
-// Event delegation pour les boutons borne-start (boot) et borne-retry (error)
+
+// ═══ Phase 6 ext — flux carte intérim partagée (borne) ═══
+// borneInterimCardUid stocké dès l'auth. Les écrans suivent : agency →
+// workers (avec bouton "+ nouveau") → soit clock direct (clic nom) soit
+// create form → fuzzy → soit confirm-match soit create. Timeout 30s sur
+// chaque écran intermédiaire pour éviter qu'une session reste ouverte.
+
+function borneInterimResetState(){
+  borneInterimCardUid=null;
+  borneInterimAgency=null;
+  borneInterimPendingForm=null;
+  borneInterimClearTimeout();
+}
+
+function borneInterimClearTimeout(){
+  if(borneInterimTimer){clearTimeout(borneInterimTimer);borneInterimTimer=null;}
+}
+
+function borneInterimArmTimeout(){
+  borneInterimClearTimeout();
+  borneInterimTimer=setTimeout(function(){
+    borneInterimResetState();
+    borneShowState('idle');
+  },BORNE_INTERIM_TIMEOUT_MS);
+}
+
+// Annulation utilisateur depuis n'importe quel écran intérim.
+function borneInterimCancel(){
+  borneInterimResetState();
+  borneShowState('idle');
+}
+
+// Écran 1 : choix de l'agence parmi celles présentes en BDD.
+function borneShowAgencyPicker(agencies){
+  borneInterimAgency=null;
+  var grid=document.getElementById('borneInterimAgencyGrid');
+  if(grid){
+    if(!agencies||!agencies.length){
+      grid.innerHTML='<div style="text-align:center;color:var(--text3);padding:24px;">Aucune agence enregistr\u00e9e. Demandez \u00e0 l\u2019admin.</div>';
+    }else{
+      grid.innerHTML=agencies.map(function(a){
+        var safe=punchEscape(a);
+        return '<button class="borne-interim-tile" type="button" data-action="borne-interim-pick-agency" data-agency="'+safe+'">'+safe+'</button>';
+      }).join('');
+    }
+  }
+  borneShowState('interim-agency');
+  borneInterimArmTimeout();
+}
+
+// Écran 2 : liste des intérimaires de l'agence + bouton "+ nouveau".
+async function borneInterimPickAgency(agency){
+  borneInterimAgency=agency;
+  borneInterimArmTimeout();
+  var resp;
+  try{
+    resp=await borneApiCall('POST','/api/interim/list-by-agency',null,{
+      card_uid:borneInterimCardUid,
+      station_token:borneStationToken(),
+      agency:agency
+    },BORNE_AUTH_TIMEOUT_MS);
+  }catch(e){
+    borneBeepError();
+    borneShowError('Erreur chargement liste',(e && e.message)||'inconnue','transient');
+    borneInterimResetState();
+    return;
+  }
+  borneShowWorkersPicker(agency,(resp && resp.workers)||[]);
+}
+
+function borneShowWorkersPicker(agency,workers){
+  var title=document.getElementById('borneInterimWorkersTitle');
+  if(title)title.textContent='Choisis ton nom \u2014 '+agency;
+  var grid=document.getElementById('borneInterimWorkersGrid');
+  if(grid){
+    if(!workers||!workers.length){
+      grid.innerHTML='<div style="text-align:center;color:var(--text3);padding:24px;grid-column:1/-1;">Aucun int\u00e9rimaire dans cette agence pour l\u2019instant.</div>';
+    }else{
+      grid.innerHTML=workers.map(function(w){
+        var safeName=punchEscape(w.name||'');
+        var pendingClass=w.pending_admin_approval?' pending':'';
+        var pendingTag=w.pending_admin_approval?'<span class="borne-interim-tile-state">(en attente de validation)</span>':'';
+        return '<button class="borne-interim-tile'+pendingClass+'" type="button" data-action="borne-interim-pick-worker" data-worker-id="'+parseInt(w.id,10)+'">'+safeName+pendingTag+'</button>';
+      }).join('');
+    }
+  }
+  borneShowState('interim-workers');
+  borneInterimArmTimeout();
+}
+
+// Clic sur un nom : POST /api/interim/clock direct (pas de fuzzy ici).
+async function borneInterimPickWorker(workerId){
+  borneInterimArmTimeout();
+  var auth;
+  try{
+    auth=await borneApiCall('POST','/api/interim/clock',null,{
+      card_uid:borneInterimCardUid,
+      station_token:borneStationToken(),
+      worker_id:parseInt(workerId,10)
+    },BORNE_AUTH_TIMEOUT_MS);
+  }catch(e){
+    borneBeepError();
+    if(e && e.status===404){
+      borneShowError('Int\u00e9rimaire introuvable','Demandez \u00e0 l\u2019admin.','transient');
+    }else if(e && e.status===423){
+      borneShowError('Compte verrouill\u00e9','PIN bloqu\u00e9 \u2014 voir admin.','transient');
+    }else{
+      borneShowError('Erreur pointage',(e && e.message)||'inconnue','transient');
+    }
+    borneInterimResetState();
+    return;
+  }
+  borneInterimClearTimeout();
+  // À partir de là, flux identique à une carte nominale (action via state machine + clock).
+  var action=borneDecideAction(auth.worker.last_clock_state,auth.worker.sched_out);
+  await borneFinalizeClock(auth,action);
+  borneInterimResetState();
+}
+
+// Bouton "+ Je suis nouveau" : ouvre le formulaire de création.
+function borneShowCreateForm(){
+  // Reset des champs
+  var f=document.getElementById('borneInterimFirstName');if(f)f.value='';
+  var l=document.getElementById('borneInterimLastName');if(l)l.value='';
+  var t=document.getElementById('borneInterimPhone');if(t)t.value='';
+  var title=document.getElementById('borneInterimCreateTitle');
+  if(title)title.textContent='Nouvelle fiche \u2014 '+(borneInterimAgency||'');
+  borneShowState('interim-create-form');
+  borneInterimArmTimeout();
+  setTimeout(function(){if(f)f.focus();},80);
+}
+
+// Submit du formulaire : fuzzy d'abord, puis create OU confirm-match.
+async function borneInterimSubmitForm(ev){
+  if(ev && ev.preventDefault)ev.preventDefault();
+  borneInterimArmTimeout();
+  var first=(document.getElementById('borneInterimFirstName').value||'').trim();
+  var last=(document.getElementById('borneInterimLastName').value||'').trim();
+  var phone=(document.getElementById('borneInterimPhone').value||'').trim();
+  if(!first||!last||!phone){
+    borneShowError('Champs incomplets','Pr\u00e9nom, nom et t\u00e9l\u00e9phone obligatoires.','transient');
+    setTimeout(function(){borneShowState('interim-create-form');borneInterimArmTimeout();},1500);
+    return;
+  }
+  if(!/^[+\d\s.\-()]{6,30}$/.test(phone)){
+    borneShowError('Format t\u00e9l\u00e9phone invalide','Exemple : 06 12 34 56 78','transient');
+    setTimeout(function(){borneShowState('interim-create-form');borneInterimArmTimeout();},1500);
+    return;
+  }
+  borneInterimPendingForm={first_name:first,last_name:last,phone:phone,agency:borneInterimAgency};
+  // Fuzzy : si match → confirm-match ; sinon → create direct.
+  var fuzzy;
+  try{
+    fuzzy=await borneApiCall('POST','/api/interim/fuzzy-search',null,{
+      card_uid:borneInterimCardUid,
+      station_token:borneStationToken(),
+      first_name:first,
+      last_name:last
+    },BORNE_AUTH_TIMEOUT_MS);
+  }catch(e){
+    fuzzy={matches:[]}; // best-effort : si fuzzy plante, on continue vers create
+  }
+  if(fuzzy && fuzzy.matches && fuzzy.matches.length>0){
+    borneShowConfirmMatch(fuzzy.matches);
+    return;
+  }
+  await borneInterimDoCreate();
+}
+
+// Modale "Vous êtes l'une de ces personnes ?" — l'utilisateur clique soit
+// un match (= clock sur worker existant, pas de création), soit "Aucun".
+function borneShowConfirmMatch(matches){
+  var grid=document.getElementById('borneInterimMatchGrid');
+  if(grid){
+    grid.innerHTML=matches.map(function(m){
+      var safeName=punchEscape(m.name||'');
+      var safeAgency=punchEscape(m.agency||'');
+      return '<button class="borne-interim-tile" type="button" data-action="borne-interim-confirm-match" data-worker-id="'+parseInt(m.id,10)+'">'+safeName+'<span class="borne-interim-tile-state">'+safeAgency+'</span></button>';
+    }).join('');
+  }
+  borneShowState('interim-confirm-match');
+  borneInterimArmTimeout();
+}
+
+// "Oui c'est moi" sur un match → clock sur worker existant.
+async function borneInterimConfirmMatch(workerId){
+  await borneInterimPickWorker(workerId);
+}
+
+// "Aucun, je suis nouveau" → création réelle.
+async function borneInterimConfirmNone(){
+  if(!borneInterimPendingForm){
+    borneInterimCancel();
+    return;
+  }
+  await borneInterimDoCreate();
+}
+
+async function borneInterimDoCreate(){
+  if(!borneInterimPendingForm){borneInterimCancel();return;}
+  borneInterimArmTimeout();
+  var auth;
+  try{
+    auth=await borneApiCall('POST','/api/interim/create',null,{
+      card_uid:borneInterimCardUid,
+      station_token:borneStationToken(),
+      first_name:borneInterimPendingForm.first_name,
+      last_name:borneInterimPendingForm.last_name,
+      phone:borneInterimPendingForm.phone,
+      agency:borneInterimPendingForm.agency
+    },BORNE_AUTH_TIMEOUT_MS);
+  }catch(e){
+    borneBeepError();
+    if(e && e.status===429){
+      borneShowError('Limite de cr\u00e9ation atteinte',(e && e.message)||'Trop de cr\u00e9ations aujourd\u2019hui.','transient');
+    }else{
+      borneShowError('Cr\u00e9ation impossible',(e && e.message)||'inconnue','transient');
+    }
+    borneInterimResetState();
+    return;
+  }
+  borneInterimClearTimeout();
+  // Worker créé en idle → l'action sera arrival.
+  var action=borneDecideAction(auth.worker.last_clock_state,auth.worker.sched_out);
+  await borneFinalizeClock(auth,action);
+  borneInterimResetState();
+}
+
+// ═══ Phase 6 ext — admin pending workers (banner + modal) ═══
+
+var _adminPending=[];
+
+async function loadAdminPending(){
+  try{
+    var d=await apiGet('admin/workers/pending');
+    _adminPending=(d && d.workers)||[];
+    renderAdminPendingBanner();
+  }catch(e){
+    // Silencieux : si non-admin (401), pas de banner.
+    _adminPending=[];
+    renderAdminPendingBanner();
+  }
+}
+
+function renderAdminPendingBanner(){
+  var banner=document.getElementById('adminPendingBanner');
+  var countEl=document.getElementById('adminPendingCount');
+  if(!banner)return;
+  var n=_adminPending.length;
+  if(countEl)countEl.textContent=n;
+  banner.hidden=(n===0);
+}
+
+function openAdminPendingModal(){
+  renderAdminPendingModalBody();
+  document.getElementById('adminPendingModal').classList.add('open');
+}
+
+function closeAdminPendingModal(){
+  document.getElementById('adminPendingModal').classList.remove('open');
+}
+
+function renderAdminPendingModalBody(){
+  var body=document.getElementById('adminPendingBody');
+  if(!body)return;
+  if(!_adminPending.length){
+    body.innerHTML='<div class="admin-pending-empty">Aucun int\u00e9rimaire en attente.</div>';
+    return;
+  }
+  body.innerHTML=_adminPending.map(function(w){
+    var safeName=punchEscape(w.name||'');
+    var safeAgency=punchEscape(w.agency||'');
+    var safePhone=punchEscape(w.phone||'');
+    var d=w.created_at?String(w.created_at).substring(0,16).replace('T',' '):'';
+    return '<div class="admin-pending-row">'+
+      '<div class="admin-pending-info">'+
+        '<div class="admin-pending-name">'+safeName+'</div>'+
+        '<div class="admin-pending-meta">'+safeAgency+' · '+safePhone+' · cr\u00e9\u00e9 '+punchEscape(d)+'</div>'+
+      '</div>'+
+      '<div class="admin-pending-actions">'+
+        '<button class="btn btn-primary btn-sm" type="button" data-action="admin-pending-approve" data-id="'+parseInt(w.id,10)+'">Valider</button>'+
+        '<button class="btn btn-outline btn-sm" type="button" data-action="admin-pending-delete" data-id="'+parseInt(w.id,10)+'" style="color:var(--red);border-color:var(--red);">Supprimer</button>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+}
+
+async function approveAdminPending(workerId){
+  var wid=parseInt(workerId,10);
+  if(isNaN(wid))return;
+  try{
+    await apiPost('admin/workers/'+wid+'/approve',{});
+    toast('Int\u00e9rimaire valid\u00e9');
+    await loadAdminPending();
+    await syncWorkers();
+    renderWorkersTable();
+    if(_adminPending.length===0)closeAdminPendingModal();
+    else renderAdminPendingModalBody();
+  }catch(e){toast('Erreur : '+(e.message||'inconnue'),'error');}
+}
+
+async function deleteAdminPending(workerId){
+  var wid=parseInt(workerId,10);
+  if(isNaN(wid))return;
+  if(!confirm('Supprimer d\u00e9finitivement cette fiche int\u00e9rim ? Tous ses pointages seront aussi supprim\u00e9s.'))return;
+  try{
+    await apiDelete('workers/'+wid);
+    toast('Fiche supprim\u00e9e');
+    await loadAdminPending();
+    await syncWorkers();
+    renderWorkersTable();
+    if(_adminPending.length===0)closeAdminPendingModal();
+    else renderAdminPendingModalBody();
+  }catch(e){toast('Erreur : '+(e.message||'inconnue'),'error');}
+}
+
+
+// Event delegation pour les boutons borne-start (boot), borne-retry (error)
+// et tous les boutons des écrans intérim partagés.
 if(document.getElementById('borneScreen')){
   document.getElementById('borneScreen').addEventListener('click',function(e){
     var b=e.target.closest('button[data-action]');
@@ -3972,6 +4389,33 @@ if(document.getElementById('borneScreen')){
     var act=b.getAttribute('data-action');
     if(act==='borne-start')borneStart();
     else if(act==='borne-retry')borneRetry();
+    else if(act==='borne-interim-cancel')borneInterimCancel();
+    else if(act==='borne-interim-pick-agency')borneInterimPickAgency(b.getAttribute('data-agency')||'');
+    else if(act==='borne-interim-pick-worker')borneInterimPickWorker(b.getAttribute('data-worker-id'));
+    else if(act==='borne-interim-new')borneShowCreateForm();
+    else if(act==='borne-interim-confirm-match')borneInterimConfirmMatch(b.getAttribute('data-worker-id'));
+    else if(act==='borne-interim-confirm-none')borneInterimConfirmNone();
+  });
+  // Submit du formulaire de création (event 'submit' pour respecter Enter clavier)
+  var iForm=document.getElementById('borneInterimForm');
+  if(iForm)iForm.addEventListener('submit',borneInterimSubmitForm);
+}
+
+// Event delegation pour le bandeau pending (sur #page-pointage) et la modale.
+document.addEventListener('click',function(e){
+  var b=e.target.closest('button[data-action]');
+  if(!b)return;
+  var act=b.getAttribute('data-action');
+  if(act==='admin-pending-open'){openAdminPendingModal();return;}
+  if(act==='admin-pending-close'){closeAdminPendingModal();return;}
+  if(act==='admin-pending-approve'){approveAdminPending(b.getAttribute('data-id'));return;}
+  if(act==='admin-pending-delete'){deleteAdminPending(b.getAttribute('data-id'));return;}
+});
+
+// Click sur l'overlay de la modale pending → ferme.
+if(document.getElementById('adminPendingModal')){
+  document.getElementById('adminPendingModal').addEventListener('click',function(e){
+    if(e.target===this)closeAdminPendingModal();
   });
 }
 

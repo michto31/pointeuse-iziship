@@ -537,10 +537,12 @@ exports.handler = async function (event) {
       if (!ilStation) return err("Station invalide", 401);
       var ilCard = await sql1("SELECT id FROM interim_cards WHERE uid=$1 AND active=true", [ilCardUid]);
       if (!ilCard) return err("Carte intérimaire inconnue", 401);
+      // Phase 6 ext fix : on inclut les pending (Q1=A) — un worker créé via borne
+      // doit pouvoir re-pointer le même jour avant validation admin. Le filtre
+      // pending=false reste sur /api/public/worker-names (page publique).
       var ilWorkers = await sql(
-        "SELECT id, name, last_clock_state FROM workers " +
-        "WHERE type='interim' AND agency=$1 " +
-        "AND COALESCE(active, true)=true AND COALESCE(pending_admin_approval, false)=false " +
+        "SELECT id, name, last_clock_state, COALESCE(pending_admin_approval, false) AS pending_admin_approval FROM workers " +
+        "WHERE type='interim' AND agency=$1 AND COALESCE(active, true)=true " +
         "ORDER BY name",
         [ilAgency]
       );
@@ -568,9 +570,12 @@ exports.handler = async function (event) {
       if (fsFirst) fsParts.push(fsFirst);
       if (fsLast) fsParts.push(fsLast);
       var fsPattern = "%" + fsParts.join("%") + "%";
+      // Phase 6 ext fix : on inclut les pending (Q1=A) pour cohérence avec
+      // /api/interim/list-by-agency — sinon un worker tout juste créé serait
+      // détecté comme doublon "absent" et permettrait de le re-créer.
       var fsMatches = await sql(
         "SELECT id, name, agency FROM workers " +
-        "WHERE type='interim' AND COALESCE(active, true)=true AND COALESCE(pending_admin_approval, false)=false " +
+        "WHERE type='interim' AND COALESCE(active, true)=true " +
         "AND name ILIKE $1 " +
         "ORDER BY name LIMIT 5",
         [fsPattern]
