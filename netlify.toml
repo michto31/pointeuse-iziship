@@ -18,3 +18,12 @@
   from = "/borne"
   to = "/index.html"
   status = 200
+
+# /admin → SPA + détection ADMIN_MODE côté client qui affiche directement
+# le formulaire login admin (au lieu de la grille publique punch). Permet
+# un raccourci direct pour l'admin (URL /admin) sans passer par le link
+# "Administration" en bas de la grille.
+[[redirects]]
+  from = "/admin"
+  to = "/index.html"
+  status = 200

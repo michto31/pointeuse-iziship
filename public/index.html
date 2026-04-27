@@ -982,6 +982,11 @@ Bonjour ! Je suis votre assistant RH. Je peux analyser vos donn&#233;es de point
 var BORNE_MODE=(location.pathname==='/borne')||((new URLSearchParams(location.search).get('mode'))==='borne');
 if(BORNE_MODE)document.body.classList.add('borne-mode');
 
+// /admin → raccourci direct vers le formulaire de login admin (skip de la
+// grille publique punch). La détection se fait sur pathname uniquement —
+// le redirect Netlify /admin → /index.html garde l'URL /admin côté client.
+var ADMIN_MODE=(location.pathname==='/admin');
+
 // ═══ BORNE — constantes hoist-safe (Phase 6) ═══
 // Déplacées en tête du script pour être initialisées AVANT l'IIFE de startup
 // qui appelle initBorne() de façon synchrone (cf // STARTUP plus bas). Sinon
@@ -1916,9 +1921,11 @@ async function doAdminPunch(){
     btn.disabled=false;
   }
 }
-async function qBS(rid){var recs=lR();var r=recs.find(function(x){return x.id===rid;});if(!r)return;var breaks=r.breaks||[];var lb=breaks.length?breaks[breaks.length-1]:null;if(lb&&!lb.end)return;breaks.push({start:nT(),end:null});try{await apiUpdateRecord(rid,{breaks:breaks});toast(r.workerName+' \u2014 Pause');renderLiveList();}catch(e){toast('Erreur','error');}}
-async function qBE(rid){var recs=lR();var r=recs.find(function(x){return x.id===rid;});if(!r)return;var breaks=r.breaks||[];var lb=breaks.length?breaks[breaks.length-1]:null;if(!lb||lb.end)return;lb.end=nT();try{await apiUpdateRecord(rid,{breaks:breaks});toast(r.workerName+' \u2014 Fin pause');renderLiveList();}catch(e){toast('Erreur','error');}}
-async function qD(rid){var recs=lR();var r=recs.find(function(x){return x.id===rid;});if(!r||r.departure)return;var breaks=r.breaks||[];if(breaks.length){var lb=breaks[breaks.length-1];if(!lb.end)lb.end=nT();}try{await apiUpdateRecord(rid,{departure:nT(),breaks:breaks});toast(r.workerName+' \u2014 D\u00e9part');renderLiveList();}catch(e){toast('Erreur','error');}}
+// V2 — helpers qBS/qBE/qD supprimés. Ils faisaient du CRUD direct sur
+// records (apiUpdateRecord) et dupliquaient la logique pause/départ V1.
+// Le bouton "Pointer" centralisé dans le panneau de gauche (admin punch)
+// passe maintenant par /api/clock V2 et suffit pour tous les pointages
+// manuels admin.
 
 // ═══ EDIT MODAL ═══
 var editingRecId=null;
@@ -2003,8 +2010,10 @@ function renderLiveList(){
     var bm=cBM(r),mt='Arr: '+r.arrival;
     if(r.departure)mt+=' \u00b7 D\u00e9p: '+r.departure;
     if(bm>0)mt+=' \u00b7 Pause: '+bm+'min';
+    // V2 — boutons inline Pause/Fin pause/Départ supprimés. Le bouton
+    // "Pointer" centralisé dans le panneau de gauche couvre tous les cas.
+    // On garde le bouton edit (crayon) pour modif manuelle d'une ligne.
     var ac='';
-    if(!iD){if(iB){ac='<button class="btn btn-outline btn-sm" onclick="qBE(\''+r.id+'\')">Fin pause</button>';}else{ac='<button class="btn btn-outline btn-sm" onclick="qBS(\''+r.id+'\')">Pause</button>';}ac+='<button class="btn btn-outline btn-sm" style="color:var(--red);border-color:var(--red);" onclick="qD(\''+r.id+'\')">D\u00e9part</button>';}
     ac+='<button class="btn btn-outline btn-sm" onclick="openEditModal(\''+r.id+'\')" title="Modifier"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>';
     var op=iD?' style="opacity:.45;"':'';
     return sep+'<div class="live-row"'+op+'><div class="avatar" style="background:'+aC[i%aC.length]+';">'+gIn(r.workerName)+'</div><div><div class="live-name">'+r.workerName+' '+bg+typeBadgeHtml(wType)+'</div><div class="live-sub">'+(r.agency||'')+'</div></div><div class="live-meta">'+mt+'</div><div class="live-actions">'+ac+'</div></div>';
@@ -3665,6 +3674,12 @@ document.addEventListener('DOMContentLoaded',function(){
   var sess=getSession();
   if(sess && sess.role==='admin' && getToken()){
     showAdminView();
+    return;
+  }
+  // /admin → on saute la grille publique et on montre direct le login admin.
+  // (Si une session admin valide existe, le check ci-dessus a déjà retourné.)
+  if(ADMIN_MODE){
+    showLoginScreen();
     return;
   }
   // Worker localStorage session expirée → clean (sans bloquer, le shortcut tentera
