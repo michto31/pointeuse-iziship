@@ -1032,9 +1032,20 @@ exports.handler = async function (event) {
     // (multi-records, breaks ouverts) est fusionnée best-effort à la prochaine
     // transition.
     if (method === "POST" && path === "clock") {
+      // requireAuth(event, "worker") accepte aussi les sessions admin
+      // (le check role n'échoue que si requiredRole=admin et role!=admin).
       var clkAuth = await requireAuth(event, "worker");
-      var clkWorkerId = clkAuth.worker_id;
-      if (!clkWorkerId) return err("Session sans worker_id", 401);
+      var clkIsAdminOverride = (clkAuth.role === "admin");
+      var clkWorkerId;
+      if (clkIsAdminOverride) {
+        // Admin override (page Pointage admin) : worker_id depuis le body,
+        // station_token optionnel (admin pas physiquement à une station).
+        clkWorkerId = parseInt(body && body.worker_id, 10);
+        if (!clkWorkerId) return err("worker_id requis pour override admin", 400);
+      } else {
+        clkWorkerId = clkAuth.worker_id;
+        if (!clkWorkerId) return err("Session sans worker_id", 401);
+      }
 
       // V2 : kind est purement informatif. Tous les kinds legacy mappent vers
       // la bascule unique ; retour {action:'entry'|'exit'} reflète l'effet réel.
@@ -1042,8 +1053,18 @@ exports.handler = async function (event) {
       var CLK_KINDS_OK = { punch: 1, arrival: 1, departure: 1, break_start: 1, break_end: 1 };
       if (!CLK_KINDS_OK[clkKindRaw]) return err("kind invalide", 400);
 
-      var clkStation = await verifyStationToken(body && body.station_token);
-      if (!clkStation) return err("Station invalide", 401);
+      // station_token : requis pour worker, optionnel pour admin override.
+      var clkStation = null;
+      if (clkIsAdminOverride) {
+        if (body && body.station_token) {
+          clkStation = await verifyStationToken(body.station_token);
+          // Admin avec station_token invalide → on ignore (pas bloquant).
+        }
+      } else {
+        clkStation = await verifyStationToken(body && body.station_token);
+        if (!clkStation) return err("Station invalide", 401);
+      }
+      var clkStationId = clkStation ? clkStation.id : null;
 
       // Auto-clôture défensive des records orphelins du jour précédent.
       await closeOrphanPointages(clkWorkerId);
@@ -1071,7 +1092,7 @@ exports.handler = async function (event) {
             {
               query: "INSERT INTO records (worker_id, worker_name, agency, date, arrival, station_id, breaks) " +
                      "VALUES ($1, $2, $3, $4, $5, $6, '[]'::jsonb) RETURNING *",
-              params: [clkWorkerId, clkWorker.name, clkWorker.agency || "", clkDate, clkTime, clkStation.id]
+              params: [clkWorkerId, clkWorker.name, clkWorker.agency || "", clkDate, clkTime, clkStationId]
             },
             {
               query: "UPDATE workers SET last_clock_state='at_work' WHERE id=$1 RETURNING id",
@@ -1114,7 +1135,7 @@ exports.handler = async function (event) {
           {
             query: "INSERT INTO records (worker_id, worker_name, agency, date, arrival, departure, station_id, breaks) " +
                    "VALUES ($1, $2, $3, $4, $5, $5, $6, '[]'::jsonb) RETURNING *",
-            params: [clkWorkerId, clkWorker.name, clkWorker.agency || "", clkDate, clkTime, clkStation.id]
+            params: [clkWorkerId, clkWorker.name, clkWorker.agency || "", clkDate, clkTime, clkStationId]
           },
           {
             query: "UPDATE workers SET last_clock_state='idle' WHERE id=$1 RETURNING id",

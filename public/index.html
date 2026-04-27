@@ -55,6 +55,15 @@ body{font-family:'Plus Jakarta Sans',-apple-system,sans-serif;background:var(--b
 .action-departure{background:var(--red-light);color:var(--red)}.action-departure .icon-circle{background:var(--red);color:#fff}.action-departure:hover{border-color:var(--red)}
 .action-break-start{background:var(--orange-light);color:#B45309}.action-break-start .icon-circle{background:var(--orange);color:#fff}.action-break-start:hover{border-color:var(--orange)}
 .action-break-end{background:var(--purple-light);color:var(--purple)}.action-break-end .icon-circle{background:var(--purple);color:#fff}.action-break-end:hover{border-color:var(--purple)}
+/* V2 admin — bouton unique avec couleur selon état du worker sélectionné */
+.admin-punch-btn{padding:18px 14px;font-size:14px;transition:all .15s}
+.admin-punch-btn[hidden]{display:none !important}
+.admin-punch-btn.admin-punch-entry{background:var(--green-light);color:var(--green)}
+.admin-punch-btn.admin-punch-entry .icon-circle{background:var(--green);color:#fff}
+.admin-punch-btn.admin-punch-entry:hover{border-color:var(--green)}
+.admin-punch-btn.admin-punch-exit{background:var(--red-light);color:var(--red)}
+.admin-punch-btn.admin-punch-exit .icon-circle{background:var(--red);color:#fff}
+.admin-punch-btn.admin-punch-exit:hover{border-color:var(--red)}
 .live-row{display:grid;grid-template-columns:38px 1fr auto auto;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border-light);transition:background .15s;animation:fadeRow .3s ease-out}
 .live-row:last-child{border-bottom:none}.live-row:hover{background:var(--bg)}
 @keyframes fadeRow{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
@@ -609,10 +618,13 @@ Changer d&#39;utilisateur
 <div class="card-body">
 <div class="form-group"><label class="form-label">Salari&#233; / Int&#233;rimaire</label><select class="form-control" id="selWorker"><option value="">&#8212; S&#233;lectionner &#8212;</option></select></div>
 <div class="action-grid">
-<button class="action-btn action-arrival" onclick="doArrival()"><div class="icon-circle"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4"/><path d="M10 17l5-5-5-5"/><line x1="15" y1="12" x2="3" y2="12"/></svg></div>Arriv&#233;e</button>
-<button class="action-btn action-departure" onclick="doDeparture()"><div class="icon-circle"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><path d="M16 17l5-5-5-5"/><line x1="21" y1="12" x2="9" y2="12"/></svg></div>D&#233;part</button>
-<button class="action-btn action-break-start" onclick="doBreakStart()"><div class="icon-circle"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg></div>D&#233;but pause</button>
-<button class="action-btn action-break-end" onclick="doBreakEnd()"><div class="icon-circle"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>Fin pause</button>
+<!-- V2 admin — 1 seul bouton "Pointer", couleur dynamique selon &eacute;tat
+     du worker s&eacute;lectionn&eacute; (vert=entr&eacute;e, rouge=sortie). Cach&eacute; tant
+     qu'aucun salari&eacute; n'est s&eacute;lectionn&eacute; dans le dropdown. -->
+<button class="action-btn admin-punch-btn" type="button" id="adminPunchBtn" data-action="admin-punch" hidden style="grid-column:1/-1;">
+<div class="icon-circle"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg></div>
+<span id="adminPunchLabel">Pointer</span>
+</button>
 </div></div></div></div>
 <div class="card"><div class="card-header"><div class="card-title">Pr&#233;sences du jour</div><span id="countLabel" style="font-size:12px;color:var(--text3);"></span></div>
 <div id="liveList"><div class="empty-state"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><p>Aucun pointage aujourd&#39;hui</p></div></div>
@@ -1386,7 +1398,7 @@ async function apiDelete(path){return apiFetch(path,{method:'DELETE'});}
 // Sync to/from server
 async function syncWorkers(){
   try{_workersCache=await apiGet('workers');
-  _workersCache=_workersCache.map(function(w){return{id:w.id,name:w.name,agency:w.agency,type:w.type,phone:w.phone,badge:w.badge,schedIn:w.sched_in||w.schedIn||'08:00',schedOut:w.sched_out||w.schedOut||'16:00',location:w.location||'toulouse',has_pin:!!w.has_pin,pin_locked:!!w.pin_locked,has_rfid:!!w.has_rfid};});
+  _workersCache=_workersCache.map(function(w){return{id:w.id,name:w.name,agency:w.agency,type:w.type,phone:w.phone,badge:w.badge,schedIn:w.sched_in||w.schedIn||'08:00',schedOut:w.sched_out||w.schedOut||'16:00',location:w.location||'toulouse',has_pin:!!w.has_pin,pin_locked:!!w.pin_locked,has_rfid:!!w.has_rfid,last_clock_state:w.last_clock_state||'idle'};});
   }catch(e){console.error('syncWorkers error:',e);}
 }
 async function syncRecords(date,from,to){
@@ -1513,6 +1525,8 @@ function refreshSel(){
     s.innerHTML+='</optgroup>';
     r.innerHTML+='</optgroup>';
   });
+  // V2 admin — refresh visibilité/couleur du bouton Pointer après repop du select.
+  if(typeof updateAdminPunchButton==='function')updateAdminPunchButton();
 }
 function openAddModal(){document.getElementById('addModal').classList.add('open');document.getElementById('newName').focus();}
 function closeAddModal(){document.getElementById('addModal').classList.remove('open');['newName','newAgency','newPhone','newBadge'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});var si=document.getElementById('newSchedIn');var so=document.getElementById('newSchedOut');var nl=document.getElementById('newLocation');if(si)si.value='08:00';if(so)so.value='16:00';if(nl)nl.value='toulouse';}
@@ -1851,35 +1865,52 @@ async function renderWorkerDetail(){
 }
 
 function getSW(){var id=document.getElementById('selWorker').value;if(!id){toast('S\u00e9lectionnez un salari\u00e9','error');return null;}return lW().find(function(w){return w.id===id;})||null;}
-async function doArrival(){
-  var w=getSW();if(!w)return;var today=tS();
-  if(lR().find(function(r){return r.workerId===w.id&&r.date===today&&!r.departure;})){toast(w.name+' est d\u00e9j\u00e0 pr\u00e9sent(e)','warning');return;}
-  try{await apiAddRecord({workerId:w.id,workerName:w.name,agency:w.agency,date:today,arrival:nT(),breaks:[]});toast(w.name+' \u2014 Arriv\u00e9e \u00e0 '+nT());renderLiveList();}catch(e){toast('Erreur: '+e.message,'error');}
+// V2 admin — page Pointage : 1 seul bouton qui POST /api/clock {kind:'punch'}
+// avec session admin + worker_id dans le body. Le serveur bascule entry/exit
+// selon last_clock_state. Couleur du bouton refl\u00e8te l'effet attendu.
+function updateAdminPunchButton(){
+  var sel=document.getElementById('selWorker');
+  var btn=document.getElementById('adminPunchBtn');
+  var label=document.getElementById('adminPunchLabel');
+  if(!sel || !btn)return;
+  var id=sel.value;
+  if(!id){btn.hidden=true;return;}
+  var w=lW().find(function(x){return x.id===id;});
+  if(!w){btn.hidden=true;return;}
+  var state=w.last_clock_state||'idle';
+  if(state==='on_break')state='at_work';
+  var isEntry=(state==='idle');
+  btn.hidden=false;
+  btn.disabled=false;
+  btn.classList.toggle('admin-punch-entry',isEntry);
+  btn.classList.toggle('admin-punch-exit',!isEntry);
+  if(label)label.textContent=isEntry?(w.name+' \u2014 Pointer une entr\u00e9e'):(w.name+' \u2014 Pointer une sortie');
 }
-async function doDeparture(){
-  var w=getSW();if(!w)return;var recs=lR(),today=tS(),rec=null;
-  for(var i=recs.length-1;i>=0;i--){if(recs[i].workerId===w.id&&recs[i].date===today&&!recs[i].departure){rec=recs[i];break;}}
-  if(!rec){toast(w.name+' n\u2019a pas point\u00e9','error');return;}
-  var breaks=rec.breaks||[];if(breaks.length){var lb=breaks[breaks.length-1];if(!lb.end)lb.end=nT();}
-  try{await apiUpdateRecord(rec.id,{departure:nT(),breaks:breaks});toast(w.name+' \u2014 D\u00e9part \u00e0 '+nT());renderLiveList();}catch(e){toast('Erreur: '+e.message,'error');}
-}
-async function doBreakStart(){
-  var w=getSW();if(!w)return;var recs=lR(),today=tS(),rec=null;
-  for(var i=recs.length-1;i>=0;i--){if(recs[i].workerId===w.id&&recs[i].date===today&&!recs[i].departure){rec=recs[i];break;}}
-  if(!rec){toast(w.name+' n\u2019est pas pr\u00e9sent(e)','error');return;}
-  var breaks=rec.breaks||[];var lb=breaks.length?breaks[breaks.length-1]:null;
-  if(lb&&!lb.end){toast(w.name+' est d\u00e9j\u00e0 en pause','warning');return;}
-  breaks.push({start:nT(),end:null});
-  try{await apiUpdateRecord(rec.id,{breaks:breaks});toast(w.name+' \u2014 Pause');renderLiveList();}catch(e){toast('Erreur: '+e.message,'error');}
-}
-async function doBreakEnd(){
-  var w=getSW();if(!w)return;var recs=lR(),today=tS(),rec=null;
-  for(var i=recs.length-1;i>=0;i--){if(recs[i].workerId===w.id&&recs[i].date===today&&!recs[i].departure){rec=recs[i];break;}}
-  if(!rec){toast(w.name+' n\u2019est pas pr\u00e9sent(e)','error');return;}
-  var breaks=rec.breaks||[];var lb=breaks.length?breaks[breaks.length-1]:null;
-  if(!lb||lb.end){toast(w.name+' n\u2019est pas en pause','warning');return;}
-  lb.end=nT();
-  try{await apiUpdateRecord(rec.id,{breaks:breaks});toast(w.name+' \u2014 Fin de pause');renderLiveList();}catch(e){toast('Erreur: '+e.message,'error');}
+
+async function doAdminPunch(){
+  var sel=document.getElementById('selWorker');
+  var btn=document.getElementById('adminPunchBtn');
+  if(!sel || !btn)return;
+  var id=sel.value;
+  if(!id){toast('S\u00e9lectionnez un salari\u00e9','error');return;}
+  var wid=parseInt(id,10);
+  var w=lW().find(function(x){return x.id===id;});
+  if(!w){toast('Salari\u00e9 introuvable','error');return;}
+  btn.disabled=true;
+  try{
+    var r=await apiPost('clock',{kind:'punch',worker_id:wid});
+    var act=(r && r.action)||'entry';
+    var time=(r && r.time)||'';
+    var label=(act==='entry')?'Entr\u00e9e enregistr\u00e9e':'Sortie enregistr\u00e9e';
+    toast(w.name+' \u2014 '+label+' \u00e0 '+time);
+    await syncWorkers();
+    await syncRecords(tS());
+    renderLiveList();
+    updateAdminPunchButton();
+  }catch(e){
+    toast('Erreur : '+(e.message||'inconnue'),'error');
+    btn.disabled=false;
+  }
 }
 async function qBS(rid){var recs=lR();var r=recs.find(function(x){return x.id===rid;});if(!r)return;var breaks=r.breaks||[];var lb=breaks.length?breaks[breaks.length-1]:null;if(lb&&!lb.end)return;breaks.push({start:nT(),end:null});try{await apiUpdateRecord(rid,{breaks:breaks});toast(r.workerName+' \u2014 Pause');renderLiveList();}catch(e){toast('Erreur','error');}}
 async function qBE(rid){var recs=lR();var r=recs.find(function(x){return x.id===rid;});if(!r)return;var breaks=r.breaks||[];var lb=breaks.length?breaks[breaks.length-1]:null;if(!lb||lb.end)return;lb.end=nT();try{await apiUpdateRecord(rid,{breaks:breaks});toast(r.workerName+' \u2014 Fin pause');renderLiveList();}catch(e){toast('Erreur','error');}}
@@ -4446,7 +4477,14 @@ document.addEventListener('click',function(e){
   if(act==='admin-pending-close'){closeAdminPendingModal();return;}
   if(act==='admin-pending-approve'){approveAdminPending(b.getAttribute('data-id'));return;}
   if(act==='admin-pending-delete'){deleteAdminPending(b.getAttribute('data-id'));return;}
+  if(act==='admin-punch'){doAdminPunch();return;}
 });
+
+// V2 admin — refresh couleur/visibilité du bouton Pointer à chaque changement
+// de salarié sélectionné dans le dropdown.
+if(document.getElementById('selWorker')){
+  document.getElementById('selWorker').addEventListener('change',updateAdminPunchButton);
+}
 
 // Click sur l'overlay de la modale pending → ferme.
 if(document.getElementById('adminPendingModal')){
