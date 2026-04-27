@@ -10,6 +10,8 @@ node_modules/
 .claude/
 deno.lock
 
-# Agent RH local : plists launchd avec chemins absolus de la machine de David,
-# non généralisables entre machines. Créés à la main après clone.
-launchd/
+# Agent RH local : plists launchd weekly/monthly avec chemins absolus de la
+# machine de David, non généralisables. Créés à la main après clone.
+# Ancré à la racine pour ne pas masquer agent/launchd/ qui contient le plist
+# poll-loop committé comme template (chemins absolus à adapter).
+/launchd/
