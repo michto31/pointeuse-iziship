@@ -354,6 +354,14 @@ body.borne-mode{overflow:hidden;height:100vh}
 .action-btn:disabled{opacity:0.3;cursor:not-allowed}
 .action-btn .action-icon{font-size:34px;line-height:1}
 .action-btn .action-label{font-size:15px;font-weight:700;color:var(--text)}
+/* V2 — bouton unique "Pointer", couleur change selon état */
+.punch-single{min-height:200px;font-size:24px}
+.punch-single .action-icon{font-size:64px}
+.punch-single .action-label{font-size:24px}
+.punch-single-entry{background:var(--green-light);border-color:var(--green)}
+.punch-single-entry .action-label,.punch-single-entry .action-icon{color:var(--green)}
+.punch-single-exit{background:var(--red-light);border-color:var(--red)}
+.punch-single-exit .action-label,.punch-single-exit .action-icon{color:var(--red)}
 
 /* #punchE doit couvrir toute la viewport (bg vert sur 100% de l'écran),
    indépendamment du layout flex de .punch-screen qui dans certains cas iOS
@@ -482,21 +490,11 @@ Changer d&#39;utilisateur
 <div class="punch-d-title">Que fais-tu&nbsp;?</div>
 <p class="punch-d-subtitle" id="punchStateLabel"></p>
 <div class="action-grid" id="actionGrid">
-<button type="button" class="action-btn" data-clock="arrival">
-<div class="action-icon">&#9654;</div>
-<div class="action-label">Arriv&#233;e</div>
-</button>
-<button type="button" class="action-btn" data-clock="break_start">
-<div class="action-icon">&#9208;&#65039;</div>
-<div class="action-label">D&#233;but pause</div>
-</button>
-<button type="button" class="action-btn" data-clock="break_end">
-<div class="action-icon">&#9654;</div>
-<div class="action-label">Fin pause</div>
-</button>
-<button type="button" class="action-btn" data-clock="departure">
-<div class="action-icon">&#9632;</div>
-<div class="action-label">D&#233;part</div>
+<!-- V2 : 1 seul bouton "Pointer". Le serveur d&eacute;cide entry/exit selon
+     last_clock_state. Le visuel (vert/rouge) refl&egrave;te l'effet attendu. -->
+<button type="button" class="action-btn punch-single" data-clock="punch" id="punchSingleBtn">
+<div class="action-icon" id="punchSingleIcon">&#9654;</div>
+<div class="action-label" id="punchSingleLabel">Pointer</div>
 </button>
 </div>
 </div>
@@ -1004,7 +1002,11 @@ var BORNE_HEARTBEAT_MS=60000;
 var BORNE_AUTH_TIMEOUT_MS=8000;
 var BORNE_CLOCK_TIMEOUT_MS=8000;
 var DEPARTURE_WINDOW_MIN=15;
+// V2 — labels neutres entry/exit. Anciennes clés gardées pour rétrocompat
+// si une réponse legacy passe par borneShowState (ex: rejeu de cache).
 var ACTION_LABELS={
+  entry:'Entr\u00e9e',
+  exit:'Sortie',
   arrival:'Arriv\u00e9e',
   break_start:'D\u00e9but de pause',
   break_end:'Retour de pause',
@@ -1975,8 +1977,46 @@ function renderLiveList(){
 }
 
 function tTM(t){if(!t)return 0;var p=t.split(':');return parseInt(p[0],10)*60+parseInt(p[1],10);}
-function cBM(r){var t=0;(r.breaks||[]).forEach(function(b){if(b.start&&b.end)t+=tTM(b.end)-tTM(b.start);});return t;}
-function cWM(r){if(!r.arrival||!r.departure)return 0;return tTM(r.departure)-tTM(r.arrival)-cBM(r);}
+
+// Refacto V2 — formule unifiée :
+//   brut = departure - arrival (auto-clos à sched_out si departure null)
+//   pauses_badgees = somme des paires {start,end} valides dans breaks
+//   forfait = 60min si aucune pause badgée, sinon 0
+//   net = max(0, brut - pauses_badgees - forfait)
+// cBM lit aussi breaks si JSONB string (driver Neon retourne parfois string).
+function cBM(r){
+  var brks=r.breaks||[];
+  if(typeof brks==='string'){try{brks=JSON.parse(brks);}catch(e){brks=[];}}
+  if(!Array.isArray(brks))brks=[];
+  var t=0;
+  brks.forEach(function(b){if(b && b.start && b.end)t+=tTM(b.end)-tTM(b.start);});
+  return Math.max(0,t);
+}
+// Brut sans pause (heure de fin auto-clôturée à sched_out si manquante).
+function cBrutM(r){
+  if(!r.arrival)return 0;
+  var aMin=tTM(r.arrival);
+  var dMin;
+  if(r.departure){dMin=tTM(r.departure);}
+  else{
+    var sched=getWorkerSchedule(r.workerId);
+    dMin=tTM(sched.schedOut);
+    if(dMin<=aMin)dMin=aMin+480;
+  }
+  return Math.max(0,dMin-aMin);
+}
+// Net = brut - pauses badgées - forfait (1h si aucune pause).
+function cWM(r){
+  var brut=cBrutM(r);
+  if(brut<=0)return 0;
+  var pauses=cBM(r);
+  var forfait=(pauses===0)?60:0;
+  return Math.max(0,brut-pauses-forfait);
+}
+// Indique si le record a été auto-clos (departure manquante → on a estimé à sched_out).
+function isAutoClosed(r){return !r.departure;}
+// Forfait appliqué (pour affichage : "+ forfait 1h" sur la ligne).
+function appliedForfaitM(r){return (cBM(r)===0 && cBrutM(r)>0)?60:0;}
 function mHM(m){if(m<=0)return'\u2014';return Math.floor(m/60)+'h'+String(m%60).padStart(2,'0');}
 
 // Helper: filter records by worker selection (supports type:interim etc.)
@@ -2017,8 +2057,16 @@ function renderRapport(){
     var t=getWorkerType(r.workerId);
     var sep='';
     if(t!==lastType&&wId==='all'){var tmN={interim:'Int\u00e9rimaires',cdi:'CDI',cdd:'CDD'};sep='<tr><td colspan="7" style="background:var(--bg);padding:6px 16px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text2);">'+(tmN[t]||t)+'</td></tr>';lastType=t;}
-    var bd=(r.breaks||[]).map(function(b){return(b.start||'?')+' \u2192 '+(b.end||'...');}).join(', ')||'\u2014';
-    return sep+'<tr><td><strong>'+r.workerName+'</strong>'+typeBadgeHtml(t)+'</td><td style="font-family:JetBrains Mono,monospace;">'+r.arrival+'</td><td style="font-family:JetBrains Mono,monospace;">'+(r.departure||'\u2014')+'</td><td style="font-size:12px;">'+bd+'</td><td style="font-family:JetBrains Mono,monospace;">'+mHM(cBM(r))+'</td><td style="font-family:JetBrains Mono,monospace;font-weight:700;color:var(--accent);">'+mHM(cWM(r))+'</td><td><button class="btn btn-outline btn-sm" onclick="openEditModal(\''+r.id+'\')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></td></tr>';
+    var brks=r.breaks||[];
+    if(typeof brks==='string'){try{brks=JSON.parse(brks);}catch(e){brks=[];}}
+    if(!Array.isArray(brks))brks=[];
+    var bd=brks.map(function(b){return(b.start||'?')+' \u2192 '+(b.end||'...');}).join(', ')||'\u2014';
+    var depCell=r.departure?r.departure:'\u2014 <span style="font-size:10px;color:var(--orange);font-weight:600;">auto-clos</span>';
+    var pauseCellMin=cBM(r);
+    var forfaitM=appliedForfaitM(r);
+    var pauseCell=mHM(pauseCellMin);
+    if(forfaitM>0)pauseCell='1h00 <span style="font-size:10px;color:var(--text3);">forfait</span>';
+    return sep+'<tr><td><strong>'+r.workerName+'</strong>'+typeBadgeHtml(t)+'</td><td style="font-family:JetBrains Mono,monospace;">'+r.arrival+'</td><td style="font-family:JetBrains Mono,monospace;">'+depCell+'</td><td style="font-size:12px;">'+bd+'</td><td style="font-family:JetBrains Mono,monospace;">'+pauseCell+'</td><td style="font-family:JetBrains Mono,monospace;font-weight:700;color:var(--accent);">'+mHM(cWM(r))+'</td><td><button class="btn btn-outline btn-sm" onclick="openEditModal(\''+r.id+'\')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></td></tr>';
   }).join('');
 }
 
@@ -3142,59 +3190,55 @@ function showPinLocked(){
 
 // ─── Écran D : action buttons ─────────────────────────────────────────
 function renderActionButtons(){
+  // V2 — 1 seul bouton "Pointer", couleur reflète l'effet attendu :
+  // vert si idle (la prochaine action sera une entrée), rouge sinon.
   var state=punchFlow.workerState||'idle';
-  var labels={idle:'Tu n’es pas encore arrivé aujourd’hui.',at_work:'Tu es au travail.',on_break:'Tu es en pause.'};
+  // V2 : on_break legacy → traité comme at_work pour le label.
+  if(state==='on_break')state='at_work';
+  var labels={idle:'Prêt à pointer ton entrée.',at_work:'Prêt à pointer ta sortie.'};
   var lbl=document.getElementById('punchStateLabel');
   if(lbl)lbl.textContent=labels[state]||'';
-  var allowed={
-    arrival:state==='idle',
-    break_start:state==='at_work',
-    break_end:state==='on_break',
-    departure:state==='at_work'||state==='on_break'
-  };
-  document.querySelectorAll('#actionGrid .action-btn').forEach(function(btn){
-    var a=btn.getAttribute('data-clock');
-    btn.disabled=!allowed[a];
-  });
+  var btn=document.getElementById('punchSingleBtn');
+  if(btn){
+    btn.disabled=false;
+    btn.classList.toggle('punch-single-entry',state==='idle');
+    btn.classList.toggle('punch-single-exit',state==='at_work');
+  }
 }
 
-async function onActionClick(action){
+async function onActionClick(){
+  // V2 — 1 seule action côté client : envoie kind='punch'. Le serveur
+  // bascule entry/exit selon last_clock_state. La réponse contient
+  // {action:'entry'|'exit', time, auto_closed_break?}.
   if(!punchFlow.station||!punchFlow.workerToken){toast('Session perdue, recommence','error');resetPunchFlow();return;}
   hapticTap();
-  // Disable all action buttons pendant le call
-  document.querySelectorAll('#actionGrid .action-btn').forEach(function(b){b.disabled=true;});
+  var btn=document.getElementById('punchSingleBtn');
+  if(btn)btn.disabled=true;
   try{
-    var d=await punchWorkerFetch('clock',{method:'POST',body:JSON.stringify({station_token:punchFlow.station.secret_token,action:action})});
-    punchFlow.workerState=d.new_state;
-    var time=d.record && d.record.arrival ? d.record.arrival : (d.record && d.record.departure ? d.record.departure : '');
-    // Si breaks, on prend le dernier set
-    if(d.record && d.record.breaks){
-      var brks=d.record.breaks;
-      if(typeof brks==='string')try{brks=JSON.parse(brks);}catch(e){brks=[];}
-      if(brks && brks.length){
-        var last=brks[brks.length-1];
-        if(action==='break_start' && last.start)time=last.start;
-        if(action==='break_end' && last.end)time=last.end;
-      }
-    }
-    if(action==='departure'){
-      // Clear localStorage : fin de journée
+    var d=await punchWorkerFetch('clock',{method:'POST',body:JSON.stringify({station_token:punchFlow.station.secret_token,kind:'punch'})});
+    var realAction=d.action||'entry';
+    var time=d.time||'';
+    if(realAction==='exit'){
+      // Fin de session — on libère la session worker localStorage pour que
+      // le prochain pointage redemande PIN (pas de session 16h muette).
       clearWorkerSessionLS();
       punchFlow.workerToken=null;
+      punchFlow.workerState='idle';
+    }else{
+      punchFlow.workerState='at_work';
     }
-    showPunchConfirm(action,time,d.auto_closed_break);
+    showPunchConfirm(realAction,time,d.auto_closed_break);
   }catch(e){
     if(e.status===409 && e.body && e.body.current_state){
-      // État divergent — resync avec le serveur
       punchFlow.workerState=e.body.current_state;
-      toast('Action impossible dans l’état actuel ('+(e.body.current_state||'?')+')','error');
+      toast('Action impossible dans l’état actuel','error');
       renderActionButtons();
     }else if(e.status===401){
       clearWorkerSessionLS();
       toast('Session expirée','error');
       resetPunchFlow();
     }else{
-      toast('Erreur&nbsp;: '+e.message,'error');
+      toast('Erreur : '+e.message,'error');
       renderActionButtons();
     }
   }
@@ -3202,7 +3246,16 @@ async function onActionClick(action){
 
 // ─── Écran E : confirmation plein écran ───────────────────────────────
 function showPunchConfirm(action,time,autoClosed){
-  var labels={arrival:'Arrivée enregistrée',departure:'Départ enregistré',break_start:'Début de pause',break_end:'Fin de pause'};
+  // V2 — labels entry/exit. Anciens (arrival/departure/break_*) gardés
+  // pour rétrocompat si une réponse legacy passe ici.
+  var labels={
+    entry:'Entrée enregistrée',
+    exit:'Sortie enregistrée',
+    arrival:'Arrivée enregistrée',
+    departure:'Départ enregistré',
+    break_start:'Début de pause',
+    break_end:'Fin de pause'
+  };
   var msg=document.getElementById('punchConfirmMsg');
   var tm=document.getElementById('punchConfirmTime');
   var ftr=document.getElementById('punchConfirmFooter');
@@ -3211,8 +3264,8 @@ function showPunchConfirm(action,time,autoClosed){
   if(ftr){
     var footer='Merci '+(punchFlow.worker?punchFlow.worker.name.split(' ')[0]:'')+' !';
     if(autoClosed)footer+=' (pause fermée automatiquement)';
-    if(action==='departure')footer='Bonne soirée !';
-    if(action==='arrival')footer='Bonne journée !';
+    if(action==='exit'||action==='departure')footer='Bonne soirée !';
+    if(action==='entry'||action==='arrival')footer='Bonne journée !';
     ftr.textContent=footer;
   }
   goToPunchScreen('E');
@@ -3859,65 +3912,47 @@ async function borneProcessScan(uid){
     borneShowAgencyPicker(auth.agencies||[]);
     return;
   }
-  // Carte nominative : flux clock standard
-  var action=borneDecideAction(auth.worker.last_clock_state,auth.worker.sched_out);
-  await borneFinalizeClock(auth,action);
+  // Carte nominative : flux clock standard. V2 = pas d'action décidée
+  // côté client, le serveur bascule selon state.
+  await borneFinalizeClock(auth);
 }
 
-// Helper extrait : POST /api/clock + affichage recognized + cleanup. Réutilisé
-// par le flux nominal ET les flux interim (clock / create).
-async function borneFinalizeClock(auth,action){
+// V2 — Helper extrait : POST /api/clock (kind='punch') + affichage
+// recognized + cleanup. Le serveur retourne {action:'entry'|'exit',time}
+// que la borne affiche tel quel (pas de décision client).
+async function borneFinalizeClock(auth){
   var clockResp;
   try{
-    clockResp=await borneClock(auth.token,action);
+    clockResp=await borneClock(auth.token);
   }catch(e){
     borneBeepError();
     if(e && e.status===409){
-      borneShowError('Action impossible',(e && e.message)||'\u00c9tat actuel ne permet pas '+action,'transient');
+      borneShowError('Action impossible',(e && e.message)||'\u00c9tat actuel ne permet pas le pointage','transient');
     }else{
       borneShowError('Erreur pointage',(e && e.message)||'inconnue','transient');
     }
     borneLogout(auth.token);
     return;
   }
-  borneShowState('recognized',{name:auth.worker.name,action:clockResp.action||action,time:clockResp.time||''});
+  borneShowState('recognized',{name:auth.worker.name,action:clockResp.action||'entry',time:clockResp.time||''});
   borneBeep();
   borneLogout(auth.token);
   borneBackTo('idle',BORNE_RECOGNIZED_MS);
 }
 
-function borneDecideAction(state,schedOut){
-  if(state==='idle')return 'arrival';
-  if(state==='on_break')return 'break_end';
-  if(state==='at_work'){
-    // Heuristique : si on est dans la fenêtre [schedOut - 15min, +∞[ → départ.
-    // Sinon → break_start. Attention horaires décalés non gérés (cf doc CLAUDE.md).
-    var now=new Date();
-    var nowMin=now.getHours()*60+now.getMinutes();
-    var schedMin=borneParseHHMM(schedOut);
-    if(schedMin!==null && nowMin>=schedMin-DEPARTURE_WINDOW_MIN)return 'departure';
-    return 'break_start';
-  }
-  // Fallback défensif : tente arrival, le serveur refusera si invalide
-  return 'arrival';
-}
-
-function borneParseHHMM(s){
-  if(!s||typeof s!=='string')return null;
-  var p=s.split(':');
-  if(p.length!==2)return null;
-  var h=parseInt(p[0],10);
-  var m=parseInt(p[1],10);
-  if(isNaN(h)||isNaN(m))return null;
-  return h*60+m;
-}
+// V2 — borneDecideAction supprimé : le client n'a plus à décider, le serveur
+// bascule selon last_clock_state. Pareil pour le helper borneParseHHMM
+// associé. Les workers en horaires décalés n'avaient de toute façon pas
+// de support correct ; V2 supprime ce besoin de décision.
 
 async function borneAuthRfid(uid){
   return await borneApiCall('POST','/api/auth/rfid',null,{uid:uid,station_token:borneStationToken()},BORNE_AUTH_TIMEOUT_MS);
 }
 
-async function borneClock(token,action){
-  return await borneApiCall('POST','/api/clock',token,{action:action,station_token:borneStationToken()},BORNE_CLOCK_TIMEOUT_MS);
+// V2 — body envoyé : {kind:'punch', station_token}. Le serveur décide
+// entry/exit selon last_clock_state. Pas d'action côté client.
+async function borneClock(token){
+  return await borneApiCall('POST','/api/clock',token,{kind:'punch',station_token:borneStationToken()},BORNE_CLOCK_TIMEOUT_MS);
 }
 
 async function borneLogout(token){
@@ -3963,7 +3998,10 @@ function borneShowState(state,payload){
     if(act){
       var label=ACTION_LABELS[payload.action]||payload.action||'';
       var time=payload.time?(' \u00e0 '+payload.time):'';
-      act.textContent=label?label+' enregistr\u00e9'+(payload.action==='arrival'||payload.action==='departure'?'e':'')+time:time;
+      // V2 : entry/exit sont tous les 2 féminin → 'enregistrée'. Anciens
+      // labels arrival/departure aussi féminin. break_start/break_end masculin.
+      var isFem=(payload.action==='entry'||payload.action==='exit'||payload.action==='arrival'||payload.action==='departure');
+      act.textContent=label?label+' enregistr\u00e9'+(isFem?'e':'')+time:time;
     }
   }
 }
@@ -4176,9 +4214,8 @@ async function borneInterimPickWorker(workerId){
     return;
   }
   borneInterimClearTimeout();
-  // À partir de là, flux identique à une carte nominale (action via state machine + clock).
-  var action=borneDecideAction(auth.worker.last_clock_state,auth.worker.sched_out);
-  await borneFinalizeClock(auth,action);
+  // À partir de là, flux identique à une carte nominale (V2 : kind='punch').
+  await borneFinalizeClock(auth);
   borneInterimResetState();
 }
 
@@ -4285,9 +4322,8 @@ async function borneInterimDoCreate(){
     return;
   }
   borneInterimClearTimeout();
-  // Worker créé en idle → l'action sera arrival.
-  var action=borneDecideAction(auth.worker.last_clock_state,auth.worker.sched_out);
-  await borneFinalizeClock(auth,action);
+  // Worker créé en idle → la bascule serveur fera entry.
+  await borneFinalizeClock(auth);
   borneInterimResetState();
 }
 
