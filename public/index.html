@@ -1875,7 +1875,10 @@ function updateAdminPunchButton(){
   if(!sel || !btn)return;
   var id=sel.value;
   if(!id){btn.hidden=true;return;}
-  var w=lW().find(function(x){return x.id===id;});
+  // Le <option value> est une string mais _workersCache.id est number — coerce
+  // les deux côtés en number pour éviter ===false.
+  var wid=parseInt(id,10);
+  var w=lW().find(function(x){return parseInt(x.id,10)===wid;});
   if(!w){btn.hidden=true;return;}
   var state=w.last_clock_state||'idle';
   if(state==='on_break')state='at_work';
@@ -1894,7 +1897,8 @@ async function doAdminPunch(){
   var id=sel.value;
   if(!id){toast('S\u00e9lectionnez un salari\u00e9','error');return;}
   var wid=parseInt(id,10);
-  var w=lW().find(function(x){return x.id===id;});
+  // Coerce les deux côtés en number (option.value est string, cache.id est number).
+  var w=lW().find(function(x){return parseInt(x.id,10)===wid;});
   if(!w){toast('Salari\u00e9 introuvable','error');return;}
   btn.disabled=true;
   try{
