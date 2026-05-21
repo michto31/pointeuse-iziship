@@ -1102,7 +1102,9 @@ exports.handler = async function (event) {
             params: [clkWorkerId]
           }
         ]);
-        return json({ ok: true, action: "exit", time: clkTime, record: ghostTx[0][0], warning: "state_mismatch_exit" });
+        // Ghost record : arrival=departure → 0 minute travaillée mais on
+        // expose le champ pour cohérence d'affichage borne.
+        return json({ ok: true, action: "exit", time: clkTime, record: ghostTx[0][0], total_worked_minutes: 0, warning: "state_mismatch_exit" });
       }
       // Cas normal : ferme departure à NOW. Si un break est ouvert (héritage
       // V1 ou bug), on le ferme aussi à NOW avec flag auto_closed.
@@ -1125,12 +1127,28 @@ exports.handler = async function (event) {
           params: [clkWorkerId]
         }
       ]);
+      // Cumul heures travaillées du jour : (departure - arrival) - somme des
+      // pauses closes. Wrap-around 24h pour horaires de nuit (rare).
+      var clkArrivalHHMM = (exitTx[0][0] && exitTx[0][0].arrival) || clkTodayRec.arrival;
+      var clkTotalWorkedMin = null;
+      if (clkArrivalHHMM && /^\d{2}:\d{2}$/.test(clkArrivalHHMM) && /^\d{2}:\d{2}$/.test(clkTime)) {
+        var clkWorkedSpan = (hhmmToMin(clkTime) - hhmmToMin(clkArrivalHHMM) + 1440) % 1440;
+        var clkBreaksTotal = 0;
+        for (var clkBi = 0; clkBi < clkExitBreaks.length; clkBi++) {
+          var clkBk = clkExitBreaks[clkBi];
+          if (clkBk && /^\d{2}:\d{2}$/.test(clkBk.start) && /^\d{2}:\d{2}$/.test(clkBk.end)) {
+            clkBreaksTotal += (hhmmToMin(clkBk.end) - hhmmToMin(clkBk.start) + 1440) % 1440;
+          }
+        }
+        clkTotalWorkedMin = Math.max(0, clkWorkedSpan - clkBreaksTotal);
+      }
       return json({
         ok: true,
         action: "exit",
         time: clkTime,
         record: exitTx[0][0],
-        auto_closed_break: autoClosedBreak
+        auto_closed_break: autoClosedBreak,
+        total_worked_minutes: clkTotalWorkedMin
       });
     }
 

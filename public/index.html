@@ -202,9 +202,16 @@ body.borne-mode{overflow:hidden;height:100vh}
 .borne-idle-prompt{font-size:80px;font-weight:700;color:var(--text);text-align:center;line-height:1.1}
 .borne-clock{font-size:48px;font-family:JetBrains Mono,monospace;color:var(--text2);margin-top:32px;letter-spacing:4px}
 
-.borne-state-recognized{background:var(--green-light)}
-.borne-success-greet{font-size:96px;font-weight:800;color:var(--green);text-align:center;line-height:1.1}
-.borne-success-action{font-size:36px;color:var(--green);margin-top:16px;text-align:center}
+.borne-state-recognized{background:var(--green-light);transition:background .25s ease}
+.borne-state-recognized.is-exit{background:#fee2e2}
+.borne-avatar{width:200px;height:200px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto;font-size:80px;font-weight:800;color:#fff;letter-spacing:-2px;line-height:1;font-family:inherit;background:var(--green);box-shadow:0 8px 24px rgba(0,0,0,0.08);animation:borneAvatarIn 220ms ease-out}
+.borne-avatar.entry{background:var(--green)}
+.borne-avatar.exit{background:var(--red)}
+@keyframes borneAvatarIn{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:scale(1)}}
+.borne-success-greet{font-size:72px;font-weight:800;color:var(--green);text-align:center;line-height:1.1;margin-top:24px}
+.borne-state-recognized.is-exit .borne-success-greet{color:var(--red)}
+.borne-success-action{font-size:32px;color:var(--text2);margin-top:8px;text-align:center;font-weight:500}
+.borne-success-total{font-size:24px;color:var(--text2);margin-top:16px;text-align:center;font-weight:600}
 
 .borne-state-error{background:#fee2e2}
 .borne-error-icon{font-size:80px;margin-bottom:16px;line-height:1}
@@ -741,8 +748,10 @@ Bonjour ! Je suis votre assistant RH. Je peux analyser vos donn&#233;es de point
 </div>
 
 <div class="borne-state borne-state-recognized" hidden>
+<div class="borne-avatar entry" id="borneRecogAvatar">?</div>
 <div class="borne-success-greet" id="borneRecogGreet">Bonjour</div>
 <div class="borne-success-action" id="borneRecogAction"></div>
+<div class="borne-success-total" id="borneRecogTotal" hidden></div>
 </div>
 
 <div class="borne-state borne-state-error" hidden>
@@ -2641,8 +2650,9 @@ async function borneProcessScan(uid){
 }
 
 // V2 — Helper extrait : POST /api/clock (kind='punch') + affichage
-// recognized + cleanup. Le serveur retourne {action:'entry'|'exit',time}
-// que la borne affiche tel quel (pas de décision client).
+// recognized + cleanup. Le serveur retourne {action:'entry'|'exit',time,
+// total_worked_minutes?} que la borne affiche tel quel (pas de décision
+// client). Bip différencié : entrée = 2 tons aigus, sortie = 1 ton grave.
 async function borneFinalizeClock(auth){
   var clockResp;
   try{
@@ -2657,8 +2667,15 @@ async function borneFinalizeClock(auth){
     borneLogout(auth.token);
     return;
   }
-  borneShowState('recognized',{name:auth.worker.name,action:clockResp.action||'entry',time:clockResp.time||''});
-  borneBeep();
+  var act=clockResp.action||'entry';
+  borneShowState('recognized',{
+    name:auth.worker.name,
+    action:act,
+    time:clockResp.time||'',
+    total_worked_minutes:(typeof clockResp.total_worked_minutes==='number')?clockResp.total_worked_minutes:null
+  });
+  if(act==='exit'||act==='departure')borneBeepExit();
+  else borneBeepEntry();
   borneLogout(auth.token);
   borneBackTo('idle',BORNE_RECOGNIZED_MS);
 }
@@ -2715,18 +2732,66 @@ function borneShowState(state,payload){
     el.hidden=!el.classList.contains('borne-state-'+state);
   });
   if(state==='recognized' && payload){
+    var isExit=(payload.action==='exit'||payload.action==='departure');
+    var recogEl=screen.querySelector('.borne-state-recognized');
+    if(recogEl)recogEl.classList.toggle('is-exit',isExit);
+    // Avatar : initiales + couleur entry/exit
+    var avatar=document.getElementById('borneRecogAvatar');
+    if(avatar){
+      avatar.textContent=borneInitials(payload.name||'');
+      avatar.classList.remove('entry','exit');
+      avatar.classList.add(isExit?'exit':'entry');
+    }
     var greet=document.getElementById('borneRecogGreet');
     var act=document.getElementById('borneRecogAction');
-    if(greet)greet.textContent='Bonjour '+(payload.name||'')+' !';
+    var total=document.getElementById('borneRecogTotal');
+    if(greet)greet.textContent='Bonjour '+borneFirstName(payload.name||'')+' !';
     if(act){
       var label=ACTION_LABELS[payload.action]||payload.action||'';
       var time=payload.time?(' \u00e0 '+payload.time):'';
-      // V2 : entry/exit sont tous les 2 féminin → 'enregistrée'. Anciens
-      // labels arrival/departure aussi féminin. break_start/break_end masculin.
+      // entry/exit/arrival/departure sont tous féminin → 'enregistrée'.
+      // break_start/break_end masculin.
       var isFem=(payload.action==='entry'||payload.action==='exit'||payload.action==='arrival'||payload.action==='departure');
       act.textContent=label?label+' enregistr\u00e9'+(isFem?'e':'')+time:time;
     }
+    // Cumul heures travaillées : affiché uniquement à la sortie ET si la
+    // valeur est un nombre valide (graceful fallback côté backend).
+    if(total){
+      if(isExit && typeof payload.total_worked_minutes==='number' && payload.total_worked_minutes>0){
+        total.textContent='Aujourd\u2019hui : '+borneFormatHours(payload.total_worked_minutes)+' travaill\u00e9es';
+        total.hidden=false;
+      }else{
+        total.hidden=true;
+      }
+    }
   }
+}
+
+// Extrait les initiales (1ère lettre du 1er mot + 1ère lettre du dernier mot).
+// 'Albane Barachon' → 'AB' ; 'Karim' → 'K' ; '' → '?' (défensif).
+function borneInitials(name){
+  if(!name||typeof name!=='string')return '?';
+  var parts=name.trim().split(/\s+/).filter(function(p){return p.length>0;});
+  if(parts.length===0)return '?';
+  var first=parts[0].charAt(0).toUpperCase();
+  if(parts.length===1)return first;
+  var last=parts[parts.length-1].charAt(0).toUpperCase();
+  return first+last;
+}
+
+// Premier mot du nom complet (greet "Bonjour Karim" et pas "Bonjour Karim Benali").
+function borneFirstName(name){
+  if(!name||typeof name!=='string')return '';
+  var parts=name.trim().split(/\s+/);
+  return parts[0]||'';
+}
+
+// Formate des minutes en 'XhYY' (450 → '7h30', 60 → '1h00', 5 → '0h05').
+function borneFormatHours(min){
+  var m=Math.max(0,parseInt(min,10)||0);
+  var h=Math.floor(m/60);
+  var r=m%60;
+  return h+'h'+String(r).padStart(2,'0');
 }
 
 // errorKind contrôle le timer auto-back ET la visibilité du bouton Réessayer.
@@ -2763,23 +2828,38 @@ function borneEnsureAudio(){
   }catch(e){borneAudioCtx=null;}
 }
 
+// Tone simple : ramp exponentielle vers silence pour un fade-out plus naturel
+// que la coupure brutale du setTimeout(osc.stop) précédent. Si AudioContext
+// pas encore créé (1er keydown attendu), no-op silencieux.
 function borneBeepTone(freq,durMs,vol){
   if(!borneAudioCtx)return;
   try{
+    var t0=borneAudioCtx.currentTime;
     var osc=borneAudioCtx.createOscillator();
     var gain=borneAudioCtx.createGain();
     osc.frequency.value=freq;
     osc.type='sine';
-    gain.gain.value=vol;
+    gain.gain.setValueAtTime(vol,t0);
+    gain.gain.exponentialRampToValueAtTime(0.001,t0+durMs/1000);
     osc.connect(gain);
     gain.connect(borneAudioCtx.destination);
-    osc.start();
-    setTimeout(function(){try{osc.stop();}catch(e){}},durMs);
+    osc.start(t0);
+    osc.stop(t0+durMs/1000);
   }catch(e){}
 }
 
-function borneBeep(){borneBeepTone(880,100,0.15);}
-function borneBeepError(){borneBeepTone(220,200,0.15);}
+// Bips différenciés (v1 UX) :
+//   entrée  → 2 tons aigus successifs (validation positive)
+//   sortie  → 1 ton grave long (fin de cycle)
+//   erreur  → 1 ton très grave court (rejet)
+// borneBeep() conservé en alias d'entrée pour rétrocompat éventuelle d'appels.
+function borneBeepEntry(){
+  borneBeepTone(440,80,0.15);
+  setTimeout(function(){borneBeepTone(880,80,0.15);},130);
+}
+function borneBeepExit(){borneBeepTone(220,250,0.15);}
+function borneBeepError(){borneBeepTone(150,150,0.15);}
+function borneBeep(){borneBeepEntry();}
 
 async function borneAcquireWakeLock(){
   if(!('wakeLock' in navigator))return;
