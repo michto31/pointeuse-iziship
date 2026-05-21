@@ -1,5 +1,4 @@
 var crypto = require("crypto");
-var bcrypt = require("bcryptjs");
 
 var H = {
   "Content-Type": "application/json",
@@ -192,15 +191,7 @@ function genStationCode() {
 }
 function genStationSecret() { return crypto.randomBytes(64).toString("hex"); }
 
-// Normalise l'input utilisateur en saisie manuelle de code_short.
-// Adaptation vs spec initiale (trim() → strip aussi les tirets de bord)
-// pour accepter p.ex. " TLS-SAL-4782 " → "TLS-SAL-4782".
-function normalizeStationCode(s) {
-  return String(s || "")
-    .replace(/[\s_-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .toUpperCase();
-}
+// normalizeStationCode retiré (servait à /api/stations/verify supprimé).
 
 // Insert avec retry sur collision (astronomiquement improbable, mais filet de
 // sécurité + log explicite si ça arrivait un jour pour détecter un bug DB).
@@ -281,117 +272,22 @@ async function sqlTx(queries) {
 
 // Transitions state machine pour /api/clock. Noms d'action en anglais pour
 // rester cohérent avec CLOCK_STATES.
-var STATE_TRANSITIONS = {
-  arrival:     { from: ["idle"],                to: "at_work" },
-  break_start: { from: ["at_work"],             to: "on_break" },
-  break_end:   { from: ["on_break"],            to: "at_work" },
-  departure:   { from: ["at_work", "on_break"], to: "idle" }
-};
+// STATE_TRANSITIONS + allowedActionsFor retirés (servaient à GET /api/clock/state
+// supprimé). La logique de bascule idle↔at_work est inline dans POST /api/clock.
 
-function allowedActionsFor(state) {
-  var out = [];
-  for (var act in STATE_TRANSITIONS) {
-    if (STATE_TRANSITIONS[act].from.indexOf(state) >= 0) out.push(act);
-  }
-  return out;
-}
-
-// ─── Phase 5 — PIN workers : helpers ────────────────────────────────────
+// ─── Helpers stations (proof-of-presence physique) ──────────────────────
 
 // Vérifie un station_token : renvoie {id} si valide ET active=true, null sinon.
-// Utilisé par pin/status, pin/create, pin/verify (proof-of-presence physique).
+// Utilisé par /api/clock (worker venant de la borne) et /api/interim/*.
 async function verifyStationToken(token) {
   if (!token || typeof token !== "string") return null;
   var row = await sql1("SELECT id FROM postes WHERE secret_token=$1 AND active=true", [token.trim()]);
   return row || null;
 }
 
-// Délai constant-time pour pin/verify : attend au moins minMs depuis startTime.
-// Pas d'await gratuit si déjà écoulé (pas de piège async, setTimeout seulement
-// si wait > 0).
-function respondAfterDelay(startTime, minMs) {
-  var elapsed = Date.now() - startTime;
-  var wait = minMs - elapsed;
-  if (wait <= 0) return Promise.resolve();
-  return new Promise(function (r) { setTimeout(r, wait); });
-}
-
-// Version "sûre" d'un worker pour les réponses de session (pas de fuite
-// pin_hash, pin_attempts, pin_locked).
-function safeWorker(w) {
-  return {
-    id: w.id,
-    name: w.name,
-    type: w.type,
-    agency: w.agency || "",
-    sched_in: w.sched_in,
-    sched_out: w.sched_out,
-    last_clock_state: w.last_clock_state || "idle"
-  };
-}
-
-// Dummy hash précalculé au chargement du module. Utilisé pour équilibrer le coût
-// CPU des chemins "rapides" de pin/verify (qui autrement sautent bcrypt) avec les
-// chemins "lents" (wrong PIN / correct PIN). Sans ça, un attaquant peut distinguer
-// "station invalide" (pas de bcrypt, ~50ms) de "wrong PIN" (bcrypt ~100ms).
-var DUMMY_BCRYPT_HASH = bcrypt.hashSync("dummy-never-matches-by-design", 10);
-
-// Exécute un bcrypt.compare "de leurre" avec DUMMY_BCRYPT_HASH pour consommer
-// le même temps CPU que la branche réelle. try/catch silencieux — on ne se soucie
-// pas du résultat, uniquement du temps passé.
-async function runDummyBcrypt(pin) {
-  try { await bcrypt.compare(String(pin || ""), DUMMY_BCRYPT_HASH); } catch (e) {}
-}
-
-// Logic principale de pin/verify, extrait dans une fonction pour pouvoir
-// envelopper l'appel du dispatcher dans un Date.now() + respondAfterDelay.
-// Retourne :
-//   - { ok: true, token, expires_at, worker } si succès
-//   - null sinon (toutes les erreurs — binary response)
-// Les effets de bord (increment attempts, set locked, logSecurityEvent) se
-// font ici avant le return. Le timing-floor se fait APRÈS cette fonction,
-// côté dispatcher, pour couvrir tous les chemins. En plus, chaque chemin d'échec
-// rapide exécute runDummyBcrypt() pour rapprocher le coût CPU de celui du
-// bcrypt.compare réel (chemin match OK / wrong PIN).
-async function handlePinVerifyInner(event, body, seg) {
-  var pin = body && body.pin;
-  var workerId = parseInt(seg[1]);
-  if (!workerId || workerId <= 0) { await runDummyBcrypt(pin); return null; }
-  if (!pin || !/^\d{6}$/.test(String(pin))) { await runDummyBcrypt(pin); return null; }
-  var station = await verifyStationToken(body && body.station_token);
-  if (!station) { await runDummyBcrypt(pin); return null; }
-  var worker = await sql1("SELECT * FROM workers WHERE id=$1", [workerId]);
-  if (!worker) { await runDummyBcrypt(pin); return null; }
-  if (!worker.pin_hash) { await runDummyBcrypt(pin); return null; }
-  if (worker.pin_locked) {
-    await runDummyBcrypt(pin);
-    await logSecurityEvent("pin_fail", worker.id, station.id, { reason: "attempted_on_locked" });
-    return null;
-  }
-  var match = false;
-  try { match = await bcrypt.compare(String(pin), worker.pin_hash); } catch (e) { match = false; }
-  if (match) {
-    await sql("UPDATE workers SET pin_attempts=0 WHERE id=$1", [worker.id]);
-    var sess = await issueSession("worker", worker.id, 16);
-    return { ok: true, token: sess.token, expires_at: sess.expires_at, worker: safeWorker(worker) };
-  }
-  // Fail path — atomic increment with auto-lock à 3
-  // LEAST(..., 3) plafonne, pin_locked passe true à 3ème fail.
-  // WHERE pin_locked=false empêche un déjà-locked de monter encore (ceinture+bretelles).
-  var updated = await sql1(
-    "UPDATE workers SET pin_attempts = LEAST(pin_attempts + 1, 3), " +
-    "pin_locked = CASE WHEN pin_attempts + 1 >= 3 THEN true ELSE false END " +
-    "WHERE id=$1 AND pin_locked=false " +
-    "RETURNING pin_attempts, pin_locked",
-    [worker.id]
-  );
-  var attempts = updated ? updated.pin_attempts : worker.pin_attempts;
-  await logSecurityEvent("pin_fail", worker.id, station.id, { attempts: attempts });
-  if (updated && updated.pin_locked) {
-    await logSecurityEvent("pin_lock", worker.id, station.id, { attempts: 3 });
-  }
-  return null;
-}
+// Bloc PIN/bcrypt retiré (post-PIN-removal) : plus de hash, plus de timing-
+// floor constant-time, plus de dummy bcrypt — la borne RFID est désormais
+// le seul flux worker, et la session est issue après scan UID + station.
 
 // In-process rate limiter (Map keyed by IP). Intentionally NOT persisted to DB:
 // - Cold starts reset the window, so this is a best-effort slowdown on scraping,
@@ -461,9 +357,10 @@ exports.handler = async function (event) {
     // Body: {uid, station_token}. Ordre de validation strict :
     //   1. Format UID → 400. 2. Station valide → sinon log station_invalid + 401.
     //   3. Worker existe avec ce UID → sinon log unknown_card (avec UID CLAIR
-    //      intentionnel pour enrôlement à chaud futur) + 404. 4. pin_locked
-    //      bloque aussi RFID → log locked_card + 423. 5. Issue session worker
-    //      16h + log rfid_clock + return token.
+    //      intentionnel pour enrôlement à chaud futur) + 404. 4. Issue session
+    //      worker 16h + log rfid_clock + return token.
+    // Post-PIN-removal : le check pin_locked a été retiré (plus de PIN du tout,
+    // la colonne pin_locked en DB est legacy et n'est plus lue).
     // Rate-limit 429 ne logue PAS d'event (sinon DoS = spam du journal).
     if (method === "POST" && path === "auth/rfid") {
       if (!checkRateLimit(event, 10, "rfid_auth")) return json({ error: "Too many requests" }, 429);
@@ -478,7 +375,7 @@ exports.handler = async function (event) {
         await logSecurityEvent("rfid_station_invalid", null, null, { uid_prefix: rfidAuthPrefix, reason: "invalid_token" });
         return err("Station invalide", 401);
       }
-      var rfidAuthWorker = await sql1("SELECT id, name, pin_locked, last_clock_state, sched_out FROM workers WHERE rfid_uid=$1 AND COALESCE(active, true)=true", [rfidAuthUid]);
+      var rfidAuthWorker = await sql1("SELECT id, name, last_clock_state, sched_out FROM workers WHERE rfid_uid=$1 AND COALESCE(active, true)=true", [rfidAuthUid]);
       if (!rfidAuthWorker) {
         // Fallback Phase 6 ext : la carte n'est pas une carte personnelle, mais
         // peut être une carte intérimaire partagée. Si oui, retourne un picker
@@ -499,10 +396,6 @@ exports.handler = async function (event) {
         }
         await logSecurityEvent("rfid_unknown_card", null, rfidAuthStation.id, { uid: rfidAuthUid, reason: "no_match" });
         return err("Carte inconnue", 404);
-      }
-      if (rfidAuthWorker.pin_locked) {
-        await logSecurityEvent("rfid_locked_card", rfidAuthWorker.id, rfidAuthStation.id, { uid_prefix: rfidAuthPrefix });
-        return err("Carte verrouillée", 423);
       }
       // Phase 6 — auto-clôture des records orphelins du jour précédent (cf
       // closeOrphanPointages). Si nettoyage : worker passe en 'idle' avant la
@@ -600,12 +493,11 @@ exports.handler = async function (event) {
       var icCard = await sql1("SELECT id FROM interim_cards WHERE uid=$1 AND active=true", [icCardUid]);
       if (!icCard) return err("Carte intérimaire inconnue", 401);
       var icWorker = await sql1(
-        "SELECT id, name, agency, pin_locked, last_clock_state, sched_out FROM workers " +
+        "SELECT id, name, agency, last_clock_state, sched_out FROM workers " +
         "WHERE id=$1 AND type='interim' AND COALESCE(active, true)=true",
         [icWorkerId]
       );
       if (!icWorker) return err("Intérimaire introuvable ou inactif", 404);
-      if (icWorker.pin_locked) return err("Compte verrouillé", 423);
       // Auto-clôture des records orphelins du jour précédent (cf closeOrphanPointages).
       await closeOrphanPointages(icWorker.id);
       var icFresh = await sql1("SELECT last_clock_state FROM workers WHERE id=$1", [icWorker.id]);
@@ -838,17 +730,8 @@ exports.handler = async function (event) {
       return json({ syncs: syncRecent });
     }
 
-    // Minimal public endpoint pour la grille d'accueil du flow salarié (Phase 5).
-    // Renvoie id, name, type (contract kind), location (site physique).
-    // Type et location sont nécessaires côté client pour les segmented controls
-    // Salariés/Intérimaires × Location. Rate-limited 20/min/IP contre scraping.
-    // Phase 6 ext : filtre les workers active=false (départs) ET les pending
-    // (créations borne non encore validées par l'admin) — pas de pollution
-    // de la liste publique tant que l'admin n'a pas approuvé.
-    if (method === "GET" && path === "public/worker-names") {
-      if (!checkRateLimit(event, 20)) return json({ error: "Too many requests" }, 429);
-      return json(await sql("SELECT id, name, type, location, agency FROM workers WHERE COALESCE(pending_admin_approval, false)=false AND COALESCE(active, true)=true ORDER BY name"));
-    }
+    // /api/public/worker-names retiré (post-PIN-removal) : la grille d'accueil
+    // "Qui pointe ?" n'existe plus, les workers passent par la borne RFID.
 
     if (method === "POST" && path === "assistant") { await requireAuth(event, "admin"); return await handleAssistant(body); }
     if (method === "POST" && path === "agent/run") { await requireAuth(event, "admin"); return await handleAgentRun(); }
@@ -856,7 +739,7 @@ exports.handler = async function (event) {
     if (method === "POST" && path === "agent/feedback") { await requireAuth(event, "admin"); await sql("UPDATE agent_memory SET feedback=$1 WHERE id=$2", [body.feedback, body.id]); return json({ ok: true }); }
     if (method === "GET" && path === "agent/runs") { await requireAuth(event, "admin"); return json(await sql("SELECT * FROM agent_runs ORDER BY run_date DESC LIMIT 20")); }
 
-    if (method === "GET" && path === "workers") { await requireAuth(event, "admin"); return json(await sql("SELECT id, name, agency, type, phone, badge, sched_in, sched_out, location, pin_attempts, pin_locked, last_clock_state, (pin_hash IS NOT NULL) AS has_pin, (rfid_uid IS NOT NULL) AS has_rfid, COALESCE(active, true) AS active, COALESCE(pending_admin_approval, false) AS pending_admin_approval, COALESCE(created_via_borne, false) AS created_via_borne, created_at, updated_at FROM workers ORDER BY type, name")); }
+    if (method === "GET" && path === "workers") { await requireAuth(event, "admin"); return json(await sql("SELECT id, name, agency, type, phone, badge, sched_in, sched_out, location, last_clock_state, (rfid_uid IS NOT NULL) AS has_rfid, COALESCE(active, true) AS active, COALESCE(pending_admin_approval, false) AS pending_admin_approval, COALESCE(created_via_borne, false) AS created_via_borne, created_at, updated_at FROM workers ORDER BY type, name")); }
     if (method === "POST" && path === "workers") {
       await requireAuth(event, "admin");
       if (!body.name) return err("Nom requis");
@@ -987,130 +870,13 @@ exports.handler = async function (event) {
       return json(regenRow);
     }
 
-    // POST /api/stations/verify [public, rate-limited 10/min/IP] — accepte
-    // {token} (depuis URL du QR) OU {code_short} (saisie manuelle, normalisée).
-    // Rejette 404 si inconnu, 403 si station.active=false.
-    // Réponse différentielle (principe du moindre privilège) :
-    //  - input {token}       → {ok, station:{id, name}}               (client a déjà le token)
-    //  - input {code_short}  → {ok, station:{id, name, secret_token}} (fallback manuel
-    //    où le client a besoin du secret_token pour les appels pin/* et clock suivants).
-    // Justification : le code_short et le secret_token sont tous deux imprimés ensemble
-    // sur le QR physique au dépôt, donc connaître l'un établit la même preuve de présence
-    // physique que l'autre. Rate-limited 10/min/IP suffisant vs brute force du code_short
-    // (alphabet 31 chars, format XXX-XXX-XXXX, entropie 31^10 ≈ 8e14).
-    if (method === "POST" && path === "stations/verify") {
-      if (!checkRateLimit(event, 10)) return json({ error: "Too many requests" }, 429);
-      var verifyToken = body.token && String(body.token).trim();
-      var verifyCode = body.code_short ? normalizeStationCode(body.code_short) : null;
-      if (!verifyToken && !verifyCode) return err("token ou code_short requis");
-      var viaCode = !verifyToken && !!verifyCode;
-      var stationRow;
-      if (verifyToken) {
-        stationRow = await sql1("SELECT id, name, active FROM postes WHERE secret_token=$1", [verifyToken]);
-      } else {
-        stationRow = await sql1("SELECT id, name, active, secret_token FROM postes WHERE code_short=$1", [verifyCode]);
-      }
-      if (!stationRow) return err("Station inconnue", 404);
-      if (!stationRow.active) return err("Station désactivée", 403);
-      var stationPayload = { id: stationRow.id, name: stationRow.name };
-      if (viaCode) stationPayload.secret_token = stationRow.secret_token;
-      return json({ ok: true, station: stationPayload });
-    }
-
-    // ═══ Phase 5 — PIN workers ═══
-
-    // GET /api/workers/:id/pin/status [public+station] — renvoie {has_pin, locked}
-    // pour que le front sache s'il faut proposer "créer PIN" ou "saisir PIN".
-    // station_token passé en header X-Station-Token (pas en query pour éviter
-    // logs/CDN/history qui pourraient fuiter le secret).
-    if (method === "GET" && seg[0] === "workers" && seg[1] && seg[2] === "pin" && seg[3] === "status") {
-      if (!checkRateLimit(event, 10)) return json({ error: "Too many requests" }, 429);
-      var hdrs = event.headers || {};
-      var pinStatusStation = await verifyStationToken(hdrs["x-station-token"] || hdrs["X-Station-Token"]);
-      if (!pinStatusStation) return err("Station invalide", 401);
-      var pinStatusWorker = await sql1("SELECT pin_hash, pin_locked FROM workers WHERE id=$1", [parseInt(seg[1])]);
-      if (!pinStatusWorker) return err("Worker introuvable", 404);
-      return json({ has_pin: !!pinStatusWorker.pin_hash, locked: !!pinStatusWorker.pin_locked });
-    }
-
-    // POST /api/workers/:id/pin/create [public+station, 5/min] — crée le PIN
-    // du worker SSI pin_hash IS NULL. UPDATE atomique (WHERE pin_hash IS NULL).
-    // Sur succès : log pin_create + issue session worker 16h.
-    if (method === "POST" && seg[0] === "workers" && seg[1] && seg[2] === "pin" && seg[3] === "create") {
-      if (!checkRateLimit(event, 5)) return json({ error: "Too many requests" }, 429);
-      var pcWorkerId = parseInt(seg[1]);
-      if (!pcWorkerId || pcWorkerId <= 0) return err("id invalide", 400);
-      var newPin = body && body.pin;
-      if (!newPin || !/^\d{6}$/.test(String(newPin))) return err("PIN invalide (6 chiffres requis)", 400);
-      var pcStation = await verifyStationToken(body && body.station_token);
-      if (!pcStation) return err("Station invalide", 401);
-      var pcExisting = await sql1("SELECT id, pin_hash FROM workers WHERE id=$1", [pcWorkerId]);
-      if (!pcExisting) return err("Worker introuvable", 404);
-      if (pcExisting.pin_hash) return err("Configuration PIN déjà effectuée", 409);
-      var pcHash = await bcrypt.hash(String(newPin), 10);
-      // UPDATE atomique avec garde WHERE pin_hash IS NULL (race-condition-safe)
-      var pcUpdated = await sql1(
-        "UPDATE workers SET pin_hash=$1, pin_attempts=0, pin_locked=false " +
-        "WHERE id=$2 AND pin_hash IS NULL " +
-        "RETURNING id, name, type, agency, sched_in, sched_out, last_clock_state",
-        [pcHash, pcWorkerId]
-      );
-      if (!pcUpdated) return err("Configuration PIN déjà effectuée", 409);
-      await logSecurityEvent("pin_create", pcWorkerId, pcStation.id, { first_time: true });
-      var pcSess = await issueSession("worker", pcWorkerId, 16);
-      return json({
-        ok: true,
-        token: pcSess.token,
-        expires_at: pcSess.expires_at,
-        worker: safeWorker(pcUpdated)
-      }, 201);
-    }
-
-    // POST /api/workers/:id/pin/verify [public+station, 5/min] — constant-time 200ms
-    // Réponse binary : 200 {token,...} ou 401 {error:"PIN incorrect"}. Tout chemin
-    // d'échec passe par handlePinVerifyInner qui log + maj état, puis délai ici.
-    if (method === "POST" && seg[0] === "workers" && seg[1] && seg[2] === "pin" && seg[3] === "verify") {
-      if (!checkRateLimit(event, 5)) return json({ error: "Too many requests" }, 429);
-      var pvStart = Date.now();
-      var pvResult = await handlePinVerifyInner(event, body, seg);
-      // Floor constant-time à 500ms. Empiriquement validé en prod
-      // avec n=10 samples : min_success = min_fail = 737ms (plancher
-      // commun établi). Le delta médian observé (~100ms) provient
-      // de la variance réseau/Lambda sur les queues, pas d'un leak
-      // côté serveur. Un attaquant aurait besoin de >1000 samples
-      // sur même IP pour extraire le signal, ce qui prend >3h vu
-      // le rate-limit 5/min/IP — détectable bien avant exploitation.
-      await respondAfterDelay(pvStart, 500);
-      if (pvResult && pvResult.ok) return json(pvResult, 200);
-      return json({ error: "PIN incorrect" }, 401);
-    }
-
-    // GET /api/clock/state [auth worker] — renvoie le state machine courant + les
-    // actions autorisées + infos worker sûres. Utilisé par le front salarié pour
-    // skip l'écran PIN quand un token worker valide est en localStorage (shortcut
-    // UX) — le worker clique sa tuile, si token valide → GET state → goto action.
-    // Pas de logging (appelé à chaque entrée rapide), pas de rate limit (auth worker).
-    if (method === "GET" && path === "clock/state") {
-      var stateAuth = await requireAuth(event, "worker");
-      var stateWorkerId = stateAuth.worker_id;
-      if (!stateWorkerId) return err("Session sans worker_id", 401);
-      var stateWorker = await sql1(
-        "SELECT id, name, type, agency, last_clock_state FROM workers WHERE id=$1",
-        [stateWorkerId]
-      );
-      if (!stateWorker) return err("Worker introuvable", 404);
-      var stateCurrent = stateWorker.last_clock_state || "idle";
-      return json({
-        last_clock_state: stateCurrent,
-        allowed_actions: allowedActionsFor(stateCurrent),
-        worker: {
-          id: stateWorker.id,
-          name: stateWorker.name,
-          type: stateWorker.type,
-          agency: stateWorker.agency || ""
-        }
-      });
-    }
+    // Bloc retiré (post-PIN-removal) :
+    //  - POST /api/stations/verify (servait au QR-scan du flow salarié supprimé)
+    //  - GET  /api/workers/:id/pin/status
+    //  - POST /api/workers/:id/pin/create
+    //  - POST /api/workers/:id/pin/verify
+    //  - GET  /api/clock/state (shortcut UX du flow salarié supprimé)
+    // Les requêtes anciennes retombent sur le 404 final du dispatcher.
 
     // POST /api/clock [auth worker] — V2 : 1 scan = 1 timestamp neutre.
     // Le serveur décide entry/exit selon last_clock_state (idle ↔ at_work).
@@ -1304,23 +1070,7 @@ exports.handler = async function (event) {
       return json({ events: seRows, limit: seLimit, offset: seOffset });
     }
 
-    // POST /api/workers/:id/pin/reset [admin] — wipe pin_hash + attempts + lock
-    // Après reset, le prochain pointage du worker va passer par pin/create.
-    if (method === "POST" && seg[0] === "workers" && seg[1] && seg[2] === "pin" && seg[3] === "reset") {
-      var resetAuth = await requireAuth(event, "admin");
-      var prWorkerId = parseInt(seg[1]);
-      var prUpdated = await sql1(
-        "UPDATE workers SET pin_hash=NULL, pin_attempts=0, pin_locked=false WHERE id=$1 RETURNING id",
-        [prWorkerId]
-      );
-      if (!prUpdated) return err("Worker introuvable", 404);
-      await logSecurityEvent("pin_reset", prWorkerId, null, {
-        triggered_by: "admin",
-        admin_worker_id: resetAuth.worker_id,
-        source: "admin_ui"
-      });
-      return json({ ok: true });
-    }
+    // POST /api/workers/:id/pin/reset retiré (post-PIN-removal).
 
     // POST /api/workers/:id/rfid [admin] — Phase 6
     // Body: {uid} (8-20 chiffres décimaux, sortie lecteur HID Neuftech).
@@ -1524,25 +1274,14 @@ async function issueSession(role, workerId, hours) {
 }
 
 async function handleLogin(body) {
-  if (body.mode === "admin") {
+  // V2 (post-PIN-removal) — seul le mode admin subsiste. Les modes badge/name
+  // de la phase shared-tablet sont retirés. Les workers s'authentifient
+  // exclusivement via la borne (carte RFID Neuftech → /api/auth/rfid).
+  if (body && body.mode === "admin") {
     var r = await sql1("SELECT value FROM settings WHERE key='admin_password'");
     if (!r || r.value !== body.password) return err("Mot de passe incorrect", 401);
     var s = await issueSession("admin", null, 12);
     return json({ role: "admin", worker_id: null, token: s.token, expires_at: s.expires_at });
-  }
-  if (body.mode === "badge") {
-    if (!body.badge) return err("Badge requis");
-    var w = await sql1("SELECT * FROM workers WHERE badge=$1 AND badge!=''", [body.badge]);
-    if (!w) return err("Badge inconnu", 401);
-    var s = await issueSession("worker", w.id, 14);
-    return json({ role: "worker", worker_id: w.id, token: s.token, expires_at: s.expires_at, worker: w });
-  }
-  if (body.mode === "name") {
-    if (!body.workerId) return err("workerId requis");
-    var w = await sql1("SELECT * FROM workers WHERE id=$1", [parseInt(body.workerId)]);
-    if (!w) return err("Introuvable", 401);
-    var s = await issueSession("worker", w.id, 14);
-    return json({ role: "worker", worker_id: w.id, token: s.token, expires_at: s.expires_at, worker: w });
   }
   return err("Mode invalide");
 }

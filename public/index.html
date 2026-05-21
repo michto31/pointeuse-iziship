@@ -137,43 +137,6 @@ tr:hover td{background:#FAFBFD}
 @media(max-width:768px){.sidebar{transform:translateX(-100%)}.sidebar.open{transform:translateX(0)}.main-wrap{margin-left:0}.hamburger{display:block}.content{padding:16px}
 #page-historique>div:nth-child(3){grid-template-columns:1fr!important}
 }
-/* ═══ LOGIN SCREEN ═══ */
-.login-screen{position:fixed;inset:0;background:var(--bg);z-index:500;display:flex;align-items:center;justify-content:center}
-.login-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);padding:36px;width:90%;max-width:400px;box-shadow:var(--shadow-lg);text-align:center}
-.login-card img{height:40px;margin-bottom:20px}
-.login-card h2{font-size:20px;font-weight:800;margin-bottom:4px;color:var(--text)}
-.login-card p{font-size:13px;color:var(--text2);margin-bottom:24px}
-.login-tabs{display:flex;gap:4px;background:var(--bg);border-radius:var(--radius-sm);padding:3px;margin-bottom:20px}
-.login-tab{flex:1;padding:8px;border:none;border-radius:var(--radius-sm);background:transparent;font-family:inherit;font-size:13px;font-weight:600;color:var(--text2);cursor:pointer;transition:all .15s}
-.login-tab.active{background:var(--white);color:var(--accent);box-shadow:var(--shadow-sm)}
-/* ═══ EMPLOYEE VIEW ═══ */
-.emp-screen{display:none;min-height:100vh;background:var(--bg);flex-direction:column}
-.emp-header{background:var(--sidebar-bg);padding:16px 24px;display:flex;align-items:center;justify-content:space-between}
-.emp-header img{height:28px}
-.emp-user-info{color:rgba(255,255,255,.8);font-size:14px;font-weight:600;display:flex;align-items:center;gap:10px}
-.emp-logout{background:none;border:1px solid rgba(255,255,255,.2);color:rgba(255,255,255,.6);padding:6px 12px;border-radius:var(--radius-sm);font-family:inherit;font-size:12px;cursor:pointer}
-.emp-logout:hover{border-color:rgba(255,255,255,.4);color:#fff}
-.emp-body{flex:1;display:flex;align-items:center;justify-content:center;padding:24px}
-.emp-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);padding:32px;width:100%;max-width:440px;box-shadow:var(--shadow);text-align:center}
-.emp-clock{font-family:'JetBrains Mono',monospace;font-size:48px;font-weight:700;color:var(--text);letter-spacing:2px;margin-bottom:4px}
-.emp-date{font-size:14px;color:var(--text2);margin-bottom:24px}
-.emp-status{padding:12px 20px;border-radius:var(--radius);margin-bottom:20px;font-size:15px;font-weight:700}
-.emp-status-absent{background:var(--bg);color:var(--text3)}
-.emp-status-present{background:var(--green-light);color:var(--green)}
-.emp-status-break{background:var(--orange-light);color:#B45309}
-.emp-status-departed{background:#F1F5F9;color:var(--text3)}
-.emp-actions{display:flex;flex-direction:column;gap:10px}
-.emp-btn{padding:16px;border:none;border-radius:var(--radius);font-family:inherit;font-size:16px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;transition:all .2s}
-.emp-btn:hover{transform:translateY(-1px);box-shadow:var(--shadow)}
-.emp-btn-scan{background:var(--accent);color:#fff}
-.emp-btn-pause{background:var(--orange);color:#fff}
-.emp-scan-zone{margin:16px auto;width:100%;max-width:320px;aspect-ratio:4/3;background:#000;border-radius:var(--radius);overflow:hidden;position:relative}
-.emp-scan-zone video{width:100%;height:100%;object-fit:cover}
-.emp-result{margin-top:16px;padding:16px;border-radius:var(--radius);animation:fadeRow .3s ease-out}
-.emp-history{margin-top:20px;text-align:left}
-.emp-history-title{font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px}
-.emp-history-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border-light);font-size:13px}
-.emp-history-row:last-child{border-bottom:none}
 /* ═══ WORKER DETAIL ═══ */
 .detail-back{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--accent);cursor:pointer;margin-bottom:16px;background:none;border:none;font-family:inherit}
 .detail-back:hover{text-decoration:underline}
@@ -204,45 +167,6 @@ tr:hover td{background:#FAFBFD}
 .chat-typing-dot:nth-child(2){animation-delay:.2s}
 .chat-typing-dot:nth-child(3){animation-delay:.4s}
 @keyframes chatBounce{to{transform:translateY(-4px);opacity:.4}}
-
-/* ═══ PUNCH SCREEN (Phase 5 — flow salarié) ═══ */
-.punch-screen{min-height:100vh;background:var(--bg);display:flex;flex-direction:column}
-.punch-header{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:var(--white);border-bottom:1px solid var(--border-light);position:sticky;top:0;z-index:10;gap:12px}
-.punch-change-btn{display:inline-flex;align-items:center;gap:6px;background:none;border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 12px;font-family:inherit;font-size:12px;color:var(--text2);cursor:pointer}
-.punch-change-btn:hover{border-color:var(--accent);color:var(--accent)}
-.punch-context{font-size:12px;color:var(--text3);text-align:right;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.punch-section{flex:1;display:flex;flex-direction:column;padding:20px 16px}
-/* L'attribut HTML [hidden] est normalement equivalent a display:none, mais notre
-   regle .punch-section{display:flex} le surcharge. On force avec !important pour
-   garantir l'invisibilite des sections masquees. Meme probleme avec les sub-flows
-   C (punchPinFlow vs punchLockedFlow) qui utilisent aussi display:flex via un
-   style inline ou une regle parente. */
-.punch-section[hidden]{display:none !important}
-#punchPinFlow[hidden],#punchLockedFlow[hidden]{display:none !important}
-.punch-a-inner{max-width:720px;margin:0 auto;width:100%;flex:1;display:flex;flex-direction:column}
-.punch-a-head{text-align:center;margin:20px 0 28px}
-.punch-a-head h1{margin:16px 0 0;font-size:22px;font-weight:700;color:var(--text)}
-/* Grille 2 colonnes : grid-template-columns:1fr 1fr force 2 cols sur mobile
-   et desktop. grid-auto-rows:130px fixe la hauteur de chaque rangée
-   (évite les tiles qui s'étirent à 50% de l'écran quand il y a peu de workers).
-   Pas de flex:1 sur la grille → elle prend sa hauteur naturelle, le footer
-   Administration n'est plus poussé en bas. */
-.worker-grid{display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:130px;gap:12px;align-content:start}
-.worker-tile{background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 12px;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;transition:all .15s}
-.worker-tile:hover,.worker-tile:active{border-color:var(--accent);transform:translateY(-1px);box-shadow:var(--shadow)}
-.worker-tile .tile-initials{width:56px;height:56px;border-radius:50%;background:var(--accent-light);color:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:20px;letter-spacing:0.02em}
-.worker-tile .tile-name{font-size:14px;font-weight:600;color:var(--text);text-align:center;line-height:1.3}
-.punch-a-footer{text-align:center;padding:24px 0 12px}
-.punch-admin-link{font-size:13px;color:#4b5563;text-decoration:underline;text-underline-offset:3px;font-weight:500}
-.punch-admin-link:hover{color:var(--accent)}
-
-/* ═══ Segmented controls iOS-like pour filtres location/contrat ═══ */
-.seg-control{display:inline-flex;background:#f3f4f6;border-radius:10px;padding:3px;gap:2px;margin:0 auto 12px;max-width:100%}
-.seg-control button{background:transparent;border:none;font-family:inherit;font-size:13px;font-weight:600;color:#6b7280;padding:7px 16px;border-radius:7px;cursor:pointer;transition:all .15s;white-space:nowrap}
-.seg-control button.active{background:#3b82f6;color:#fff;box-shadow:0 1px 2px rgba(0,0,0,.08)}
-.seg-control button:not(.active):hover{color:#111827}
-.punch-filters{display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:16px}
-.worker-empty{grid-column:1/-1;text-align:center;padding:40px 20px;color:var(--text3);font-size:14px}
 
 /* ═══ Journal security events — badges par type ═══ */
 .se-badge{display:inline-block;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:600;white-space:nowrap;font-family:JetBrains Mono,monospace}
@@ -336,78 +260,6 @@ body.borne-mode{overflow:hidden;height:100vh}
 #syncBtn .sync-spinner{display:inline-block;width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:syncSpin .7s linear infinite;margin-right:6px;vertical-align:-2px}
 @keyframes syncSpin{to{transform:rotate(360deg)}}
 
-.punch-loading{text-align:center;color:var(--text3);padding:40px;font-size:14px;grid-column:1 / -1}
-
-.punch-b-inner,.punch-c-inner,.punch-d-inner,.punch-e-inner{max-width:520px;margin:0 auto;width:100%;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px}
-.punch-greet{font-size:18px;color:var(--text);margin-bottom:8px;text-align:center}
-.punch-b-title{font-size:15px;color:var(--text2);text-align:center;font-weight:600}
-.punch-scan-wrap{position:relative;width:100%;max-width:360px;aspect-ratio:1/1;background:#000;border-radius:var(--radius-lg);overflow:hidden;margin:0 auto}
-.punch-scan-wrap video{width:100%;height:100%;object-fit:cover}
-.punch-scan-frame{position:absolute;top:15%;left:15%;width:70%;height:70%;border:2px dashed rgba(255,255,255,.7);border-radius:12px;pointer-events:none}
-.punch-manual-form{width:100%;max-width:360px;display:flex;flex-direction:column;gap:10px}
-.punch-code-input{font-family:JetBrains Mono,monospace;font-size:22px;text-align:center;letter-spacing:0.08em;text-transform:uppercase;padding:16px}
-.punch-hint{font-size:11px;color:var(--text3);text-align:center;margin:0}
-.punch-toggle-mode{background:none;border:none;color:var(--accent);cursor:pointer;font-family:inherit;font-size:13px;text-decoration:underline;text-underline-offset:3px;padding:8px}
-
-.punch-c-title{font-size:22px;font-weight:700;color:var(--text);text-align:center}
-.punch-c-subtitle{font-size:13px;color:var(--text3);text-align:center;margin:0;max-width:320px}
-.pin-dots{display:flex;gap:14px;justify-content:center;margin:18px 0}
-.pin-dot{width:14px;height:14px;border-radius:50%;border:2px solid var(--border);background:var(--white);transition:all .1s}
-.pin-dot.filled{background:var(--accent);border-color:var(--accent)}
-.pin-keypad{display:grid;grid-template-columns:repeat(3,72px);gap:12px;justify-content:center}
-.pin-keypad button{width:72px;height:72px;border-radius:50%;border:1px solid var(--border);background:var(--white);font-family:inherit;font-size:24px;font-weight:600;cursor:pointer;color:var(--text);transition:background .1s}
-.pin-keypad button:hover{background:var(--bg)}
-.pin-keypad button:active{background:var(--accent-light)}
-.pin-keypad button:disabled{opacity:0;pointer-events:none}
-.pin-keypad button[data-pin-action="backspace"]{font-size:22px;color:var(--text3)}
-.locked-icon{font-size:64px;text-align:center}
-.locked-title{margin:8px 0 0;font-size:22px;font-weight:700;color:var(--red);text-align:center}
-.locked-body{color:var(--text2);text-align:center;max-width:300px;margin:0}
-.locked-countdown{font-size:12px;color:var(--text3);text-align:center;margin-top:20px}
-
-.punch-d-title{font-size:22px;font-weight:700;color:var(--text);text-align:center}
-.punch-d-subtitle{font-size:13px;color:var(--text3);text-align:center;margin:0}
-.action-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;width:100%;max-width:420px;margin:0 auto}
-.action-btn{background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);padding:28px 12px;font-family:inherit;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:10px;transition:all .15s;min-height:140px}
-.action-btn:hover:not(:disabled){border-color:var(--accent);transform:translateY(-1px);box-shadow:var(--shadow)}
-.action-btn:disabled{opacity:0.3;cursor:not-allowed}
-.action-btn .action-icon{font-size:34px;line-height:1}
-.action-btn .action-label{font-size:15px;font-weight:700;color:var(--text)}
-/* V2 — bouton unique "Pointer", couleur change selon état */
-.punch-single{min-height:200px;font-size:24px}
-.punch-single .action-icon{font-size:64px}
-.punch-single .action-label{font-size:24px}
-.punch-single-entry{background:var(--green-light);border-color:var(--green)}
-.punch-single-entry .action-label,.punch-single-entry .action-icon{color:var(--green)}
-.punch-single-exit{background:var(--red-light);border-color:var(--red)}
-.punch-single-exit .action-label,.punch-single-exit .action-icon{color:var(--red)}
-
-/* #punchE doit couvrir toute la viewport (bg vert sur 100% de l'écran),
-   indépendamment du layout flex de .punch-screen qui dans certains cas iOS
-   ne propage pas correctement la largeur au flex-item (observé moitié gauche
-   seulement). position:fixed + inset:0 bypass tout le parent layout et
-   garantit 100vw × 100vh. Le fix .punch-section[hidden]{display:none
-   !important} (ligne ~207) continue de s'appliquer en priorité quand la
-   section est hidden — !important > position:fixed dans la cascade. */
-#punchE{position:fixed;inset:0;background:#16a34a;color:#fff;padding:0;margin:0;display:flex;flex-direction:column;z-index:100}
-.punch-e-inner{color:#fff}
-.confirm-check{font-size:120px;line-height:1;text-align:center}
-.confirm-message{font-size:28px;font-weight:700;text-align:center;margin-top:10px}
-.confirm-time{font-size:44px;font-weight:700;font-family:JetBrains Mono,monospace;text-align:center;letter-spacing:0.05em}
-.confirm-footer{font-size:16px;color:rgba(255,255,255,.85);text-align:center}
-.confirm-countdown{font-size:12px;color:rgba(255,255,255,.7);text-align:center;margin-top:30px}
-
-@media (max-width:480px){
-  .worker-grid{gap:10px;grid-auto-rows:120px}
-  .worker-tile{padding:12px 10px}
-  .worker-tile .tile-initials{width:48px;height:48px;font-size:17px}
-  .pin-keypad{grid-template-columns:repeat(3,64px);gap:10px}
-  .pin-keypad button{width:64px;height:64px;font-size:22px}
-  .action-btn{min-height:120px;padding:22px 10px}
-  .action-btn .action-icon{font-size:30px}
-  .confirm-check{font-size:96px}
-  .confirm-message{font-size:22px}
-  .confirm-time{font-size:36px}
 }
 .rh-tile{background:var(--white);border:1px solid var(--border);border-radius:var(--radius-sm);padding:18px 16px;cursor:pointer;transition:all .15s;display:flex;flex-direction:column;align-items:flex-start;text-align:left;font-family:inherit;gap:6px;min-height:110px}
 .rh-tile:hover{border-color:var(--accent);transform:translateY(-1px);box-shadow:var(--shadow)}
@@ -421,160 +273,17 @@ body.borne-mode{overflow:hidden;height:100vh}
 <body>
 <div class="toast-container" id="toastContainer"></div>
 
-<!-- ═══ PUNCH SCREEN (Phase 5 — flow salarié, vue par défaut) ═══ -->
-<div id="punchScreen" class="punch-screen">
-<header id="punchHeader" class="punch-header" style="display:none;">
-<button class="punch-change-btn" type="button" onclick="resetPunchFlow()">
-<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5"/><polyline points="12 19 5 12 12 5"/></svg>
-Changer d&#39;utilisateur
-</button>
-<div class="punch-context" id="punchHeaderContext"></div>
-</header>
-
-<section class="punch-section punch-A" id="punchA">
-<div class="punch-a-inner">
-<div class="punch-a-head">
-<h1>Qui pointe&nbsp;?</h1>
-</div>
-<div class="punch-filters">
-<div class="seg-control" id="locationFilter" hidden></div>
-<div class="seg-control" id="contractFilter">
-<button type="button" data-filter-contract="salarie" class="active">Salari&eacute;s</button>
-<button type="button" data-filter-contract="interimaire">Int&eacute;rimaires</button>
-</div>
-<div class="seg-control" id="agencyFilter" hidden></div>
-</div>
-<div class="worker-grid" id="workerGrid"><div class="punch-loading">Chargement&hellip;</div></div>
-<div class="punch-a-footer">
-<a href="#" class="punch-admin-link" onclick="showLoginScreen();return false;">Administration</a>
-</div>
-</div>
-</section>
-
-<section class="punch-section punch-B" id="punchB" hidden>
-<div class="punch-b-inner">
-<div class="punch-greet">Bonjour <span id="punchGreetName"></span> &#128075;</div>
-<div id="punchScanArea" style="width:100%;display:flex;flex-direction:column;align-items:center;gap:14px;">
-<div class="punch-b-title">Scanne le QR affich&#233; au d&#233;p&#244;t</div>
-<div class="punch-scan-wrap">
-<video id="punchVideo" autoplay muted playsinline></video>
-<div class="punch-scan-frame"></div>
-</div>
-</div>
-<div id="punchManualArea" hidden style="width:100%;display:flex;flex-direction:column;align-items:center;gap:10px;">
-<div class="punch-b-title">Code du poste</div>
-<div class="punch-manual-form">
-<input type="text" class="form-control punch-code-input" id="punchCodeInput" placeholder="TLS-SAL-4782" autocomplete="off" autocapitalize="characters" spellcheck="false">
-<button class="btn btn-primary btn-full" type="button" onclick="submitPunchCode()">Valider</button>
-</div>
-<p class="punch-hint">Format XXX-XXX-XXXX, espaces et tirets accept&#233;s.</p>
-</div>
-<button class="punch-toggle-mode" id="punchToggleMode" type="button" onclick="togglePunchScanMode()">Saisir le code &#224; la main</button>
-</div>
-</section>
-
-<section class="punch-section punch-C" id="punchC" hidden>
-<div class="punch-c-inner">
-<div id="punchPinFlow" style="width:100%;display:flex;flex-direction:column;align-items:center;gap:10px;">
-<div class="punch-c-title" id="punchPinTitle">Ton PIN</div>
-<p class="punch-c-subtitle" id="punchPinSubtitle"></p>
-<div class="pin-dots" id="pinDots"></div>
-<div class="pin-keypad" id="pinKeypad">
-<button type="button" data-digit="1">1</button>
-<button type="button" data-digit="2">2</button>
-<button type="button" data-digit="3">3</button>
-<button type="button" data-digit="4">4</button>
-<button type="button" data-digit="5">5</button>
-<button type="button" data-digit="6">6</button>
-<button type="button" data-digit="7">7</button>
-<button type="button" data-digit="8">8</button>
-<button type="button" data-digit="9">9</button>
-<button type="button" class="pin-empty" disabled></button>
-<button type="button" data-digit="0">0</button>
-<button type="button" data-pin-action="backspace">&#9003;</button>
-</div>
-</div>
-<div id="punchLockedFlow" hidden style="display:flex;flex-direction:column;align-items:center;gap:14px;">
-<div class="locked-icon">&#128274;</div>
-<h2 class="locked-title">Compte bloqu&#233;</h2>
-<p class="locked-body">Demande &#224; un administrateur de d&#233;bloquer ton PIN.</p>
-<button class="btn btn-outline" type="button" onclick="resetPunchFlow()">Retour</button>
-<div class="locked-countdown">Retour automatique dans <span id="punchLockedSecs">5</span>&nbsp;s</div>
-</div>
-</div>
-</section>
-
-<section class="punch-section punch-D" id="punchD" hidden>
-<div class="punch-d-inner">
-<div class="punch-d-title">Que fais-tu&nbsp;?</div>
-<p class="punch-d-subtitle" id="punchStateLabel"></p>
-<div class="action-grid" id="actionGrid">
-<!-- V2 : 1 seul bouton "Pointer". Le serveur d&eacute;cide entry/exit selon
-     last_clock_state. Le visuel (vert/rouge) refl&egrave;te l'effet attendu. -->
-<button type="button" class="action-btn punch-single" data-clock="punch" id="punchSingleBtn">
-<div class="action-icon" id="punchSingleIcon">&#9654;</div>
-<div class="action-label" id="punchSingleLabel">Pointer</div>
-</button>
-</div>
-</div>
-</section>
-
-<section class="punch-section punch-E" id="punchE" hidden>
-<div class="punch-e-inner">
-<div class="confirm-check">&#10003;</div>
-<div class="confirm-message" id="punchConfirmMsg"></div>
-<div class="confirm-time" id="punchConfirmTime"></div>
-<div class="confirm-footer" id="punchConfirmFooter"></div>
-<div class="confirm-countdown">Retour dans <span id="punchConfirmSecs">3</span>&nbsp;s</div>
-</div>
-</section>
-</div>
-
 <!-- ═══ LOGIN SCREEN ═══ -->
 <div class="login-screen" id="loginScreen" style="display:none;">
 <div class="login-card">
 <img src="data:image/png;base64,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" alt="IziShip" id="loginLogo">
 <h2>Pointeuse IziShip</h2>
-<p>Connectez-vous pour acc&#233;der &#224; l&#39;application</p>
-<div class="login-tabs">
-<button class="login-tab active" onclick="setLoginMode('admin',this)">Administrateur</button>
-<button class="login-tab" onclick="setLoginMode('worker',this)" style="display:none;">Salari&#233;</button>
-</div>
+<p>Connexion administrateur</p>
 <div id="loginAdminForm">
 <div class="form-group"><label class="form-label" style="text-align:left;">Mot de passe admin</label><input type="password" class="form-control" id="loginAdminPwd" placeholder="Mot de passe"></div>
 <button class="btn btn-primary btn-full" onclick="loginAdmin()" style="margin-top:8px;">Connexion admin</button>
-<p style="text-align:center;margin-top:12px;"><a href="#" style="font-size:12px;color:var(--text3);text-decoration:underline;" onclick="hideLoginScreen();return false;">Retour au pointage</a></p>
-</div>
-<div id="loginEmpForm" style="display:none;">
-<div class="form-group"><label class="form-label" style="text-align:left;">Votre code badge</label><input type="text" class="form-control" id="loginEmpBadge" placeholder="Scannez ou tapez votre code badge"></div>
-<button class="btn btn-primary btn-full" onclick="loginEmployee()" style="margin-top:8px;">Connexion</button>
-<div style="text-align:center;margin:14px 0 8px;font-size:12px;color:var(--text3);">ou connectez-vous par nom</div>
-<div class="form-group"><select class="form-control" id="loginEmpSelect"><option value="">— Choisir votre nom —</option></select></div>
-<button class="btn btn-outline btn-full" onclick="loginEmployeeByName()">Connexion par nom</button>
 </div>
 <p style="font-size:11px;color:var(--text3);margin-top:16px;">Mot de passe admin par d&#233;faut : <strong>admin</strong></p>
-</div>
-</div>
-
-<!-- ═══ EMPLOYEE VIEW ═══ -->
-<div class="emp-screen" id="empScreen">
-<div class="emp-header">
-<img src="data:image/png;base64,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" alt="IziShip" id="empLogo">
-<div class="emp-user-info">
-<span id="empUserName"></span>
-<button class="emp-logout" onclick="logout()">D&#233;connexion</button>
-</div>
-</div>
-<div class="emp-body">
-<div class="emp-card">
-<div class="emp-clock" id="empClock">--:--:--</div>
-<div class="emp-date" id="empDate"></div>
-<div class="emp-status emp-status-absent" id="empStatus">Non point&#233;</div>
-<div class="emp-actions" id="empActions"></div>
-<div id="empScanArea"></div>
-<div id="empResult"></div>
-<div class="emp-history" id="empHistory"></div>
-</div>
 </div>
 </div>
 
@@ -598,7 +307,7 @@ Changer d&#39;utilisateur
 <button class="nav-item" data-page="stations"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>Postes de pointage</button>
 <button class="nav-item" data-page="security-events"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>Journal s&#233;curit&#233;</button>
 </nav>
-<div class="sidebar-footer"><div class="sidebar-avatar">DA</div><div><div class="sidebar-user">David</div><div class="sidebar-role">Administrateur</div></div><button class="emp-logout" onclick="logout()" style="margin-left:auto;font-size:11px;">D&#233;co</button></div>
+<div class="sidebar-footer"><div class="sidebar-avatar">DA</div><div><div class="sidebar-user">David</div><div class="sidebar-role">Administrateur</div></div><button onclick="logout()" style="margin-left:auto;font-size:11px;background:none;border:1px solid rgba(255,255,255,.2);color:rgba(255,255,255,.6);padding:6px 12px;border-radius:var(--radius-sm);font-family:inherit;cursor:pointer;">D&#233;co</button></div>
 </aside>
 
 <div class="main-wrap">
@@ -983,9 +692,9 @@ Bonjour ! Je suis votre assistant RH. Je peux analyser vos donn&#233;es de point
 var BORNE_MODE=(location.pathname==='/borne')||((new URLSearchParams(location.search).get('mode'))==='borne');
 if(BORNE_MODE)document.body.classList.add('borne-mode');
 
-// /admin → raccourci direct vers le formulaire de login admin (skip de la
-// grille publique punch). La détection se fait sur pathname uniquement —
-// le redirect Netlify /admin → /index.html garde l'URL /admin côté client.
+// ADMIN_MODE post-PIN-removal : "/" et "/admin" se comportent identiquement
+// (la grille publique punch n'existe plus). On garde la détection au cas où
+// du code legacy y ferait référence, mais elle n'a plus d'effet de branche.
 var ADMIN_MODE=(location.pathname==='/admin');
 
 // ═══ BORNE — constantes hoist-safe (Phase 6) ═══
@@ -1071,26 +780,9 @@ function tokenIsExpiringSoon(){
   return (expMs-Date.now())<60000;
 }
 
-function setLoginMode(mode,btn){
-  document.querySelectorAll('.login-tab').forEach(function(b){b.classList.remove('active');});
-  btn.classList.add('active');
-  document.getElementById('loginAdminForm').style.display=mode==='admin'?'':'none';
-  document.getElementById('loginEmpForm').style.display=mode==='worker'?'':'none';
-  if(mode==='worker') populateLoginSelect();
-}
-
-async function populateLoginSelect(){
-  var sel=document.getElementById('loginEmpSelect');
-  var workers=lW();
-  if(!workers || workers.length===0){
-    try{workers=await apiFetch('public/worker-names');}catch(e){console.error('populateLoginSelect:',e);workers=[];}
-  }
-  if(!Array.isArray(workers))workers=[];
-  sel.innerHTML='<option value="">\u2014 Choisir votre nom \u2014</option>';
-  workers.forEach(function(w){
-    sel.innerHTML+='<option value="'+w.id+'">'+w.name+(w.agency?' ('+w.agency+')':'')+'</option>';
-  });
-}
+// ─── Auth admin (post-PIN-removal) ────────────────────────────────────
+// Plus de mode worker côté front : les workers passent par la borne RFID.
+// Le login admin reste la seule entrée client.
 
 async function loginAdmin(){
   var pwd=document.getElementById('loginAdminPwd').value;
@@ -1104,31 +796,7 @@ async function loginAdmin(){
     }
   }catch(e){toast('Mot de passe incorrect','error');}
 }
-async function loginEmployee(){
-  var badge=document.getElementById('loginEmpBadge').value.trim();
-  if(!badge){toast('Entrez votre code badge','error');return;}
-  try{
-    var res=await apiPost('auth/login',{mode:'badge',badge:badge});
-    if(res.worker){
-      setToken(res.token,res.expires_at);
-      setSession({role:'worker',workerId:res.worker.id,workerName:res.worker.name});
-      showEmployeeView(res.worker);
-    }
-  }catch(e){toast('Badge inconnu','error');}
-}
-async function loginEmployeeByName(){
-  var id=document.getElementById('loginEmpSelect').value;
-  if(!id){toast('S\u00e9lectionnez votre nom','error');return;}
-  try{
-    var res=await apiPost('auth/login',{mode:'name',workerId:parseInt(id)});
-    if(res.worker){
-      var w={id:res.worker.id,name:res.worker.name,agency:res.worker.agency,schedIn:res.worker.sched_in,schedOut:res.worker.sched_out};
-      setToken(res.token,res.expires_at);
-      setSession({role:'worker',workerId:w.id,workerName:w.name});
-      showEmployeeView(w);
-    }
-  }catch(e){toast('Salari\u00e9 introuvable','error');}
-}
+
 async function logout(){
   var token=getToken();
   if(token){
@@ -1136,12 +804,9 @@ async function logout(){
   }
   clearToken();
   clearSession();
-  stopEmpCamera();
   document.getElementById('loginScreen').style.display='flex';
   document.getElementById('adminScreen').style.display='none';
-  document.getElementById('empScreen').style.display='none';
   document.getElementById('loginAdminPwd').value='';
-  document.getElementById('loginEmpBadge').value='';
 }
 
 async function syncAfterLogin(){
@@ -1150,230 +815,14 @@ async function syncAfterLogin(){
 
 function showAdminView(){
   document.getElementById('loginScreen').style.display='none';
-  document.getElementById('empScreen').style.display='none';
   document.getElementById('adminScreen').style.display='';
   // Phase 6 ext : refresh banner pending au switch admin.
   if(typeof loadAdminPending==='function')loadAdminPending();
   if(typeof loadSyncRecent==='function')loadSyncRecent();
 }
-function showEmployeeView(w){
-  document.getElementById('loginScreen').style.display='none';
-  document.getElementById('adminScreen').style.display='none';
-  document.getElementById('empScreen').style.display='flex';
-  document.getElementById('empUserName').textContent=w.name;
-  updateEmpView();
-}
 
-// Handle Enter on login forms
+// Handle Enter sur le password admin
 document.getElementById('loginAdminPwd').addEventListener('keydown',function(e){if(e.key==='Enter')loginAdmin();});
-document.getElementById('loginEmpBadge').addEventListener('keydown',function(e){if(e.key==='Enter')loginEmployee();});
-
-// USB scanner on login page for employee
-var loginScanBuf='';var loginScanTimer=null;
-document.addEventListener('keydown',function(e){
-  var ls=document.getElementById('loginScreen');
-  if(!ls||ls.style.display==='none')return;
-  if(document.getElementById('loginEmpForm').style.display==='none')return;
-  if(document.activeElement&&document.activeElement.id==='loginEmpBadge')return;
-  if(e.ctrlKey||e.metaKey||e.altKey)return;
-  if(e.key==='Enter'){if(loginScanBuf.length>=3){document.getElementById('loginEmpBadge').value=loginScanBuf;loginEmployee();}loginScanBuf='';clearTimeout(loginScanTimer);return;}
-  if(e.key.length!==1)return;
-  loginScanBuf+=e.key;clearTimeout(loginScanTimer);loginScanTimer=setTimeout(function(){loginScanBuf='';},100);
-});
-
-// ═══ EMPLOYEE VIEW LOGIC ═══
-var empCamStream=null;
-var empQRInterval=null;
-
-function updateEmpView(){
-  var sess=getSession();if(!sess||sess.role!=='worker')return;
-  var w=lW().find(function(x){return x.id===sess.workerId;});
-  if(!w){toast('Salari\u00e9 introuvable','error');logout();return;}
-
-  // Update clock
-  var n=new Date();
-  document.getElementById('empClock').textContent=String(n.getHours()).padStart(2,'0')+':'+String(n.getMinutes()).padStart(2,'0')+':'+String(n.getSeconds()).padStart(2,'0');
-  var ds=['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi'];
-  var ms=['janvier','f\u00e9vrier','mars','avril','mai','juin','juillet','ao\u00fbt','septembre','octobre','novembre','d\u00e9cembre'];
-  document.getElementById('empDate').textContent=ds[n.getDay()]+' '+n.getDate()+' '+ms[n.getMonth()]+' '+n.getFullYear();
-
-  // Get today's record
-  var recs=lR();var today=tS();
-  var rec=null;
-  for(var i=recs.length-1;i>=0;i--){if(recs[i].workerId===w.id&&recs[i].date===today){rec=recs[i];break;}}
-
-  var statusEl=document.getElementById('empStatus');
-  var actionsEl=document.getElementById('empActions');
-  var histEl=document.getElementById('empHistory');
-
-  if(!rec||rec.departure){
-    // Absent or departed
-    statusEl.className='emp-status '+(rec&&rec.departure?'emp-status-departed':'emp-status-absent');
-    statusEl.textContent=rec&&rec.departure?'Journ\u00e9e termin\u00e9e \u2014 D\u00e9part \u00e0 '+rec.departure:'Non point\u00e9';
-    actionsEl.innerHTML='<button class="emp-btn emp-btn-scan" onclick="empScanAction(\'arrival\')"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 012-2h2"/><path d="M17 3h2a2 2 0 012 2v2"/><path d="M21 17v2a2 2 0 01-2 2h-2"/><path d="M7 21H5a2 2 0 01-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg>'+(rec&&rec.departure?'Nouveau pointage (scanner QR)':'Scanner le QR code pour pointer')+'</button>';
-  } else {
-    var lastB=rec.breaks.length?rec.breaks[rec.breaks.length-1]:null;
-    var isOnBreak=lastB&&!lastB.end;
-    if(isOnBreak){
-      statusEl.className='emp-status emp-status-break';
-      statusEl.textContent='En pause depuis '+lastB.start;
-      actionsEl.innerHTML='<button class="emp-btn emp-btn-scan" onclick="empScanAction(\'break_end\')"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 012-2h2"/><path d="M17 3h2a2 2 0 012 2v2"/><path d="M21 17v2a2 2 0 01-2 2h-2"/><path d="M7 21H5a2 2 0 01-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg>Scanner le QR code pour revenir de pause</button>';
-    } else {
-      statusEl.className='emp-status emp-status-present';
-      statusEl.textContent='Pr\u00e9sent(e) depuis '+rec.arrival;
-      actionsEl.innerHTML='<button class="emp-btn emp-btn-pause" onclick="empDoPause()"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>Partir en pause</button><button class="emp-btn emp-btn-scan" onclick="empScanAction(\'departure\')"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 012-2h2"/><path d="M17 3h2a2 2 0 012 2v2"/><path d="M21 17v2a2 2 0 01-2 2h-2"/><path d="M7 21H5a2 2 0 01-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg>Scanner le QR code pour le d\u00e9part</button>';
-    }
-  }
-
-  // History
-  if(rec){
-    var bm=cBM(rec);var wm=rec.departure?cWM(rec):0;
-    var rows='<div class="emp-history-row"><span>Arriv\u00e9e</span><span style="font-family:JetBrains Mono,monospace;font-weight:600;">'+rec.arrival+'</span></div>';
-    (rec.breaks||[]).forEach(function(b,i){
-      rows+='<div class="emp-history-row"><span>Pause '+(i+1)+'</span><span style="font-family:JetBrains Mono,monospace;">'+b.start+' \u2192 '+(b.end||'...')+'</span></div>';
-    });
-    if(rec.departure)rows+='<div class="emp-history-row"><span>D\u00e9part</span><span style="font-family:JetBrains Mono,monospace;font-weight:600;">'+rec.departure+'</span></div>';
-    if(bm>0)rows+='<div class="emp-history-row"><span>Total pause</span><span style="font-family:JetBrains Mono,monospace;">'+bm+'min</span></div>';
-    if(wm>0)rows+='<div class="emp-history-row"><span style="font-weight:700;">Temps travaill\u00e9</span><span style="font-family:JetBrains Mono,monospace;font-weight:700;color:var(--accent);">'+mHM(wm)+'</span></div>';
-    histEl.innerHTML='<div class="emp-history-title">Aujourd\u2019hui</div>'+rows;
-  } else {
-    histEl.innerHTML='';
-  }
-}
-
-async function empDoPause(){
-  var sess=getSession();if(!sess)return;
-  var recs=lR();var today=tS();var rec=null;
-  for(var i=recs.length-1;i>=0;i--){if(recs[i].workerId===sess.workerId&&recs[i].date===today&&!recs[i].departure){rec=recs[i];break;}}
-  if(!rec)return;
-  var breaks=rec.breaks||[];breaks.push({start:nT(),end:null});
-  try{await apiUpdateRecord(rec.id,{breaks:breaks});toast('Pause commenc\u00e9e');await syncRecords(tS());updateEmpView();renderLiveList();}catch(e){toast('Erreur: '+e.message,'error');}
-}
-
-function empScanAction(expectedAction){
-  var area=document.getElementById('empScanArea');
-  area.innerHTML='<div class="emp-scan-zone" id="empScanZone"><video id="empScanVideo" autoplay playsinline></video><div class="scan-overlay"><div class="scan-frame"></div></div></div><p style="font-size:12px;color:var(--text2);margin-top:8px;">Pr\u00e9sentez le QR code du poste devant la cam\u00e9ra</p><button class="btn btn-outline btn-sm" onclick="stopEmpCamera();" style="margin-top:8px;">Annuler</button>';
-  startEmpCamera(expectedAction);
-}
-
-var empScanCooldown=false;
-
-function startEmpCamera(expectedAction){
-  var video=document.getElementById('empScanVideo');
-  if(!video)return;
-  navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:640},height:{ideal:480}}}).then(function(stream){
-    empCamStream=stream;video.srcObject=stream;
-    loadJsQR(function(){scanEmpQR(expectedAction);});
-  }).catch(function(err){
-    toast('Cam\u00e9ra inaccessible. Utilisez un appareil avec cam\u00e9ra pour scanner.','error');
-    stopEmpCamera();
-  });
-}
-function stopEmpCamera(){
-  if(empCamStream){empCamStream.getTracks().forEach(function(t){t.stop();});empCamStream=null;}
-  clearInterval(empQRInterval);
-  var area=document.getElementById('empScanArea');
-  if(area)area.innerHTML='';
-}
-
-function loadJsQR(cb){
-  if(window.jsQR){cb();return;}
-  var s=document.createElement('script');
-  // Bundle local : cdnjs a retiré jsQR@1.4.0 (404). Cf public/vendor/jsqr.min.js.
-  // Chemin absolu via window.location.origin pas nécessaire ici car on est sur la
-  // même page (pas une window.open comme pour qrcode.min.js).
-  s.src='/vendor/jsqr.min.js';
-  s.onload=cb;
-  s.onerror=function(){toast('Impossible de charger le lecteur QR.','error');try{stopEmpCamera();}catch(e){}};
-  document.head.appendChild(s);
-}
-
-function scanEmpQR(expectedAction){
-  var video=document.getElementById('empScanVideo');
-  if(!video)return;
-  var canvas=document.createElement('canvas');
-  var ctx=canvas.getContext('2d');
-  empQRInterval=setInterval(function(){
-    if(!video.videoWidth||empScanCooldown)return;
-    canvas.width=video.videoWidth;canvas.height=video.videoHeight;
-    ctx.drawImage(video,0,0);
-    var imgData=ctx.getImageData(0,0,canvas.width,canvas.height);
-    if(!window.jsQR)return;
-    var code=jsQR(imgData.data,imgData.width,imgData.height);
-    if(!code||!code.data)return;
-    // Anti-double scan cooldown
-    empScanCooldown=true;
-    setTimeout(function(){empScanCooldown=false;},3000);
-    validateAndExecute(code.data,expectedAction);
-  },300);
-}
-
-// ═══ QR VALIDATION ═══
-// getQRSecret() defined in API data layer (_qrSecret cache)
-
-function validateQR(data){
-  // Must match format iziship:<secret>:<posteId>
-  if(!data||typeof data!=='string')return false;
-  var parts=data.split(':');
-  if(parts.length!==3)return false;
-  if(parts[0]!=='iziship')return false;
-  if(parts[1]!==getQRSecret())return false;
-  if(!parts[2]||parts[2].length===0)return false;
-  return true;
-}
-
-function validateAndExecute(qrData,expectedAction){
-  if(!validateQR(qrData)){
-    toast('QR code invalide ou non reconnu. Utilisez un QR g\u00e9n\u00e9r\u00e9 par l\u2019admin IziShip.','error');
-    showEmpResult('QR code non reconnu','var(--red-light)','var(--red)');
-    return;
-  }
-  stopEmpCamera();
-  executeEmpAction(expectedAction);
-}
-
-async function executeEmpAction(action){
-  var sess=getSession();if(!sess)return;
-  var today=tS();
-  var w=lW().find(function(x){return x.id===sess.workerId;});
-  if(!w)return;
-  try{
-    if(action==='arrival'){
-      await apiAddRecord({workerId:w.id,workerName:w.name,agency:w.agency,date:today,arrival:nT(),breaks:[]});
-      showEmpResult('Arriv\u00e9e enregistr\u00e9e \u00e0 '+nT(),'var(--green-light)','var(--green)');
-    } else if(action==='departure'){
-      var recs=lR();var rec=null;
-      for(var i=recs.length-1;i>=0;i--){if(recs[i].workerId===w.id&&recs[i].date===today&&!recs[i].departure){rec=recs[i];break;}}
-      if(rec){
-        var breaks=rec.breaks||[];if(breaks.length){var lb=breaks[breaks.length-1];if(lb&&!lb.end)lb.end=nT();}
-        await apiUpdateRecord(rec.id,{departure:nT(),breaks:breaks});
-        showEmpResult('D\u00e9part enregistr\u00e9 \u00e0 '+nT(),'var(--red-light)','var(--red)');
-      }
-    } else if(action==='break_end'){
-      var recs=lR();var rec=null;
-      for(var i=recs.length-1;i>=0;i--){if(recs[i].workerId===w.id&&recs[i].date===today&&!recs[i].departure){rec=recs[i];break;}}
-      if(rec&&rec.breaks&&rec.breaks.length){
-        var lb=rec.breaks[rec.breaks.length-1];
-        if(lb&&!lb.end){lb.end=nT();await apiUpdateRecord(rec.id,{breaks:rec.breaks});showEmpResult('Retour de pause \u00e0 '+nT(),'var(--purple-light)','var(--purple)');}
-      }
-    }
-    await syncRecords(tS());
-    updateEmpView();renderLiveList();
-  }catch(e){toast('Erreur: '+e.message,'error');}
-}
-
-function showEmpResult(msg,bg,color){
-  var el=document.getElementById('empResult');
-  el.innerHTML='<div class="emp-result" style="background:'+bg+';color:'+color+';font-weight:700;font-size:15px;">'+msg+'</div>';
-  setTimeout(function(){el.innerHTML='';},4000);
-}
-
-// Phase 5 : empScreen (Phase 1-4) est déprécié, remplacé par punchScreen.
-// Le tick d'horloge legacy qui rafraîchissait empScreen via updateEmpView() est
-// neutralisé — il gardait empScreen "vivant" et causait sur iOS un re-render
-// parasite de l'ancienne vue si une session worker legacy traînait en sessionStorage.
-// updateEmpView() + showEmployeeView() restent déclarés (dead code) le temps
-// d'un cleanup final en étape 8, mais plus jamais invoqués automatiquement.
 
 // Auth init handled in startup() below
 // ═══ API DATA LAYER ═══
@@ -1411,10 +860,8 @@ function handleUnauthorized401(hadToken){
   clearToken();
   clearSession();
   if(hadToken){
-    try{stopEmpCamera();}catch(e){}
     var login=document.getElementById('loginScreen');if(login)login.style.display='flex';
     var admin=document.getElementById('adminScreen');if(admin)admin.style.display='none';
-    var emp=document.getElementById('empScreen');if(emp)emp.style.display='none';
     try{toast('Session expirée, reconnectez-vous','error');}catch(e){}
   }
 }
@@ -1426,7 +873,7 @@ async function apiDelete(path){return apiFetch(path,{method:'DELETE'});}
 // Sync to/from server
 async function syncWorkers(){
   try{_workersCache=await apiGet('workers');
-  _workersCache=_workersCache.map(function(w){return{id:w.id,name:w.name,agency:w.agency,type:w.type,phone:w.phone,badge:w.badge,schedIn:w.sched_in||w.schedIn||'08:00',schedOut:w.sched_out||w.schedOut||'16:00',location:w.location||'toulouse',has_pin:!!w.has_pin,pin_locked:!!w.pin_locked,has_rfid:!!w.has_rfid,last_clock_state:w.last_clock_state||'idle'};});
+  _workersCache=_workersCache.map(function(w){return{id:w.id,name:w.name,agency:w.agency,type:w.type,phone:w.phone,badge:w.badge,schedIn:w.sched_in||w.schedIn||'08:00',schedOut:w.sched_out||w.schedOut||'16:00',location:w.location||'toulouse',has_rfid:!!w.has_rfid,last_clock_state:w.last_clock_state||'idle'};});
   }catch(e){console.error('syncWorkers error:',e);}
 }
 async function syncRecords(date,from,to){
@@ -1568,20 +1015,7 @@ async function addWorker(){
 }
 async function deleteWorker(id){if(!confirm('Supprimer ce salari\u00e9 ?'))return;try{await apiDeleteWorker(id);refreshSel();renderWorkersTable();toast('Salari\u00e9 supprim\u00e9');}catch(e){toast('Erreur: '+e.message,'error');}}
 
-async function resetWorkerPin(id){
-  var wid=parseInt(id,10);
-  if(isNaN(wid))return;
-  if(!confirm('R\u00e9initialiser le PIN de ce salari\u00e9 ?\n\nLe prochain pointage lui demandera de cr\u00e9er un nouveau PIN.'))return;
-  try{
-    await apiPost('workers/'+wid+'/pin/reset',{});
-    toast('PIN r\u00e9initialis\u00e9');
-    await syncWorkers();
-    renderWorkersTable();
-    closeEditWorker();
-    // Re-ouvre la modale edit (bouton reset disparait puisque has_pin devient false)
-    setTimeout(function(){editWorker(wid);},120);
-  }catch(e){toast('Erreur: '+e.message,'error');}
-}
+// resetWorkerPin retir\u00e9 (post-PIN-removal) : plus de PIN \u00e0 r\u00e9initialiser.
 
 // ═══ RFID — enrôlement / dissociation depuis fiche worker (Phase 6 v2) ═══
 // V2 HID Neuftech : le sous-modal #rfidAssocModal a 4 états — listening (par
@@ -1770,7 +1204,6 @@ function editWorker(id){
       ? '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;"><span class="rfid-badge-ok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Carte associ\u00e9e</span><button class="btn btn-outline btn-sm" type="button" data-action="rfid-unenroll" data-worker-id="'+parseInt(id,10)+'" style="color:var(--red);border-color:var(--red);">Dissocier</button></div>'
       : '<button class="btn btn-outline btn-sm" type="button" data-action="rfid-enroll" data-worker-id="'+parseInt(id,10)+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 15h.01"/><path d="M11 15h2"/></svg> Associer une carte RFID</button>')+
     '</div>'+
-    (w.has_pin?'<div style="padding:12px 20px 0;"><button class="btn btn-outline" type="button" onclick="resetWorkerPin('+parseInt(id,10)+')" style="color:var(--red);border-color:var(--red);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> R\u00e9initialiser le PIN'+(w.pin_locked?' (verrouill\u00e9)':'')+'</button></div>':'')+
     '<div class="modal-footer"><button class="btn btn-outline" onclick="closeEditWorker()">Annuler</button><button class="btn btn-primary" onclick="saveEditWorker(\''+id+'\')">Enregistrer</button></div>';
   document.getElementById('addModal').classList.add('open');
 }
@@ -2685,792 +2118,21 @@ function seBindListeners(){
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',seBindListeners);
 else seBindListeners();
 
-// ═══ PUNCH SCREEN — flow salarié (Phase 5 step 6) ═══
-
-var PUNCH_WS_KEY='worker_session';
-var punchFlow={
-  screen:'A',
-  worker:null,
-  station:null,
-  workerToken:null,
-  workerState:null,
-  pinEntry:{digits:'',mode:'verify',firstAttempt:''},
-  clientFailCount:0,
-  lockedTimer:null,
-  confirmTimer:null,
-  lockedSecs:5,
-  confirmSecs:3
-};
-
-function getWorkerSessionLS(){
-  try{return JSON.parse(localStorage.getItem(PUNCH_WS_KEY));}catch(e){return null;}
-}
-function setWorkerSessionLS(token,expires_at,worker_id,worker_name){
-  localStorage.setItem(PUNCH_WS_KEY,JSON.stringify({token:token,expires_at:expires_at,worker_id:worker_id,worker_name:worker_name}));
-}
-function clearWorkerSessionLS(){localStorage.removeItem(PUNCH_WS_KEY);}
-function workerSessionIsFresh(){
-  var s=getWorkerSessionLS();
-  if(!s||!s.expires_at)return false;
-  var t=new Date(s.expires_at).getTime();
-  return !isNaN(t) && (t-Date.now()>30000);
-}
-function hapticTap(){if(navigator.vibrate)try{navigator.vibrate(10);}catch(e){}}
-
-
-// Escape HTML pour injection innerHTML
+// Bloc PUNCH SCREEN (Phase 5 — flow salarié + PIN keypad + worker grid +
+// scan QR + clock state machine côté client) retiré (post-PIN-removal).
+// Les workers passent maintenant exclusivement par la borne RFID Neuftech
+// servie sur /borne. Reste côté admin : la page Pointage (override manuel)
+// et la page Postes (génération QR/secret_token utilisé par la borne).
+//
+// punchEscape (helper HTML-escape qui vivait dans ce bloc) reste référencé
+// par le journal sécurité, la borne picker intérim et la modale admin pending
+// — on le re-déclare ici comme alias d'escapeAttr (cf plus bas) plutôt que de
+// renommer 15+ callsites.
 function punchEscape(s){
   return String(s==null?'':s).replace(/[&<>"']/g,function(c){
     return c==='&'?'&amp;':c==='<'?'&lt;':c==='>'?'&gt;':c==='"'?'&quot;':'&#39;';
   });
 }
-
-// Fetch avec auth worker (token en mémoire, pas localStorage admin)
-async function punchWorkerFetch(path,opts){
-  opts=opts||{};
-  var url=API_BASE+'/'+path;
-  var headers=Object.assign({'Content-Type':'application/json'},opts.headers||{});
-  if(punchFlow.workerToken)headers['Authorization']='Bearer '+punchFlow.workerToken;
-  var res=await fetch(url,Object.assign({},opts,{headers:headers}));
-  if(res.status===401){var e=new Error('unauthorized');e.status=401;throw e;}
-  if(!res.ok){
-    var eb=await res.json().catch(function(){return{error:'Erreur '+res.status};});
-    var err=new Error(eb.error||'Erreur '+res.status);
-    err.status=res.status;
-    err.body=eb;
-    throw err;
-  }
-  return res.json();
-}
-
-// Fetch public (sans auth) — pour worker-names, stations/verify, pin/status, pin/verify, pin/create
-async function punchPublicFetch(path,opts,extraHeaders){
-  opts=opts||{};
-  var url=API_BASE+'/'+path;
-  var headers=Object.assign({'Content-Type':'application/json'},opts.headers||{},extraHeaders||{});
-  var res=await fetch(url,Object.assign({},opts,{headers:headers}));
-  if(!res.ok){
-    var eb=await res.json().catch(function(){return{error:'Erreur '+res.status};});
-    var err=new Error(eb.error||'Erreur '+res.status);
-    err.status=res.status;
-    err.body=eb;
-    throw err;
-  }
-  return res.json();
-}
-
-// ─── Navigation ────────────────────────────────────────────────────────
-function goToPunchScreen(letter){
-  punchFlow.screen=letter;
-  // Remet le scroll en haut à chaque transition d'écran. Sinon, sur iOS après
-  // saisie PIN (keypad au milieu du viewport), passer à D laisse le scroll bas
-  // et les boutons action sont off-screen. "instant" > "smooth" pour éviter
-  // le flash visuel de scroll.
-  try{window.scrollTo({top:0,left:0,behavior:'instant'});}
-  catch(e){window.scrollTo(0,0);}
-  ['A','B','C','D','E'].forEach(function(s){
-    var el=document.getElementById('punch'+s);
-    if(el)el.hidden=(s!==letter);
-  });
-  var header=document.getElementById('punchHeader');
-  if(header)header.style.display=(letter==='B'||letter==='C'||letter==='D')?'flex':'none';
-  // Context dans header
-  var ctx=punchFlow.worker?(punchFlow.worker.name||''):'';
-  if(punchFlow.station && punchFlow.station.name)ctx+=(ctx?' · ':'')+punchFlow.station.name;
-  var ctxEl=document.getElementById('punchHeaderContext');
-  if(ctxEl)ctxEl.textContent=ctx;
-  // Hook par écran
-  if(letter==='A')renderWorkerGrid();
-  if(letter==='B')setTimeout(startPunchScan,50);
-  if(letter==='C')enterPinScreen();
-  if(letter==='D')renderActionButtons();
-  // E est géré par son caller (showPunchConfirm)
-}
-
-function resetPunchFlow(){
-  if(punchFlow.lockedTimer){clearInterval(punchFlow.lockedTimer);punchFlow.lockedTimer=null;}
-  if(punchFlow.confirmTimer){clearInterval(punchFlow.confirmTimer);punchFlow.confirmTimer=null;}
-  stopPunchScan();
-  punchFlow.worker=null;
-  punchFlow.workerToken=null;
-  punchFlow.workerState=null;
-  punchFlow.pinEntry={digits:'',mode:'verify',firstAttempt:''};
-  punchFlow.clientFailCount=0;
-  // station conservé si validé via URL (évite re-scan entre workers)
-  goToPunchScreen('A');
-}
-
-function showPunchScreen(){
-  var ps=document.getElementById('punchScreen');var ls=document.getElementById('loginScreen');
-  var as=document.getElementById('adminScreen');var es=document.getElementById('empScreen');
-  if(ps)ps.style.display='';
-  if(ls)ls.style.display='none';
-  if(as)as.style.display='none';
-  if(es)es.style.display='none';
-  goToPunchScreen('A');
-}
-function showLoginScreen(){
-  var ps=document.getElementById('punchScreen');var ls=document.getElementById('loginScreen');
-  if(ps)ps.style.display='none';
-  if(ls)ls.style.display='flex';
-  var inp=document.getElementById('loginAdminPwd');if(inp)setTimeout(function(){inp.focus();},50);
-}
-function hideLoginScreen(){
-  var ps=document.getElementById('punchScreen');var ls=document.getElementById('loginScreen');
-  if(ls)ls.style.display='none';
-  if(ps)ps.style.display='';
-  goToPunchScreen('A');
-}
-
-// ─── Écran A : grille workers avec filtres location + contract ───────
-var _punchWorkers=[]; // cache liste workers (rafraîchie à chaque entrée écran A)
-var PUNCH_FILTER_KEY='punch_filter'; // localStorage {location, contract}
-
-function loadPunchFilter(){
-  try{
-    var s=JSON.parse(localStorage.getItem(PUNCH_FILTER_KEY));
-    if(s && typeof s==='object')return s;
-  }catch(e){}
-  return {location:null,contract:'salarie',agency:null};
-}
-function savePunchFilter(f){
-  try{localStorage.setItem(PUNCH_FILTER_KEY,JSON.stringify(f));}catch(e){}
-}
-
-async function renderWorkerGrid(){
-  var grid=document.getElementById('workerGrid');
-  if(!grid)return;
-  grid.innerHTML='<div class="punch-loading">Chargement&hellip;</div>';
-  try{
-    var workers=await punchPublicFetch('public/worker-names');
-    workers.sort(function(a,b){return (a.name||'').localeCompare(b.name||'');});
-    _punchWorkers=workers;
-    if(!workers.length){
-      grid.innerHTML='<div class="punch-loading">Aucun salari&eacute; enregistr&eacute;.</div>';
-      renderLocationFilter([]);
-      return;
-    }
-    // Liste distincte des sites pour le filtre location
-    var locs=[];
-    workers.forEach(function(w){var l=w.location||'toulouse';if(locs.indexOf(l)<0)locs.push(l);});
-    locs.sort();
-    renderLocationFilter(locs);
-    // Liste distincte des agences (workers intérim avec agency non-vide)
-    var ags=[];
-    workers.forEach(function(w){var a=(w.agency||'').trim();if(a && ags.indexOf(a)<0)ags.push(a);});
-    ags.sort(function(a,b){return a.toLowerCase().localeCompare(b.toLowerCase());});
-    renderAgencyFilter(ags);
-    renderFilteredGrid();
-  }catch(e){
-    grid.innerHTML='<div class="punch-loading" style="color:var(--red);">Erreur&nbsp;: '+punchEscape(e.message)+'</div>';
-  }
-}
-
-function renderLocationFilter(locs){
-  var ctr=document.getElementById('locationFilter');
-  if(!ctr)return;
-  // Si 0 ou 1 site, pas de filtre location (on filtre juste sur contract).
-  if(!locs || locs.length<2){ctr.hidden=true;ctr.innerHTML='';return;}
-  ctr.hidden=false;
-  var f=loadPunchFilter();
-  // Si la location persistée n'existe plus dans les workers, on prend la 1re.
-  var active=(f.location && locs.indexOf(f.location)>=0)?f.location:locs[0];
-  ctr.innerHTML=locs.map(function(l){
-    var esc=punchEscape(l);
-    var lbl=esc.charAt(0).toUpperCase()+esc.slice(1);
-    return '<button type="button" data-filter-location="'+esc+'"'+(l===active?' class="active"':'')+'>'+lbl+'</button>';
-  }).join('');
-  // Persiste la valeur effective (au cas où fallback)
-  if(active!==f.location){f.location=active;savePunchFilter(f);}
-}
-
-// TODO agencies sont calculées au 1er render, stale si un worker est ajouté/changé pendant la session.
-function renderAgencyFilter(agencies){
-  var ctr=document.getElementById('agencyFilter');
-  if(!ctr)return;
-  if(!agencies || !agencies.length){ctr.innerHTML='';ctr.hidden=true;return;}
-  var f=loadPunchFilter();
-  var active=(f.agency && agencies.indexOf(f.agency)>=0)?f.agency:'';
-  var btns='<button type="button" data-filter-agency=""'+(active===''?' class="active"':'')+'>Toutes</button>';
-  btns+=agencies.map(function(a){
-    var esc=punchEscape(a);
-    return '<button type="button" data-filter-agency="'+esc+'"'+(a===active?' class="active"':'')+'>'+esc+'</button>';
-  }).join('');
-  ctr.innerHTML=btns;
-  if(active!==(f.agency||'')){f.agency=active||null;savePunchFilter(f);}
-}
-
-function updateAgencyFilterVisibility(){
-  var ctr=document.getElementById('agencyFilter');
-  if(!ctr)return;
-  var f=loadPunchFilter();
-  var hasButtons=ctr.querySelectorAll('button[data-filter-agency]').length>0;
-  ctr.hidden=(f.contract!=='interimaire')||!hasButtons;
-}
-
-function restoreContractFilterUI(){
-  var f=loadPunchFilter();
-  document.querySelectorAll('#contractFilter button').forEach(function(b){
-    var c=b.getAttribute('data-filter-contract');
-    if(c===f.contract)b.classList.add('active');
-    else b.classList.remove('active');
-  });
-}
-
-function renderFilteredGrid(){
-  var grid=document.getElementById('workerGrid');
-  if(!grid)return;
-  restoreContractFilterUI();
-  updateAgencyFilterVisibility();
-  var f=loadPunchFilter();
-  var filtered=_punchWorkers.filter(function(w){
-    // contract : 'interimaire' ⇔ type='interim', 'salarie' ⇔ type∈{cdi,cdd,...}
-    var isInterim=(w.type==='interim');
-    var wantInterim=(f.contract==='interimaire');
-    if(isInterim!==wantInterim)return false;
-    // location (si filtre actif)
-    if(f.location){
-      var wl=w.location||'toulouse';
-      if(wl!==f.location)return false;
-    }
-    // agency (uniquement en mode intérimaires, filtre actif = non vide)
-    if(f.contract==='interimaire' && f.agency){
-      var wa=(w.agency||'').toLowerCase();
-      if(wa!==f.agency.toLowerCase())return false;
-    }
-    return true;
-  });
-  if(!filtered.length){
-    var msg=(f.contract==='interimaire')?'Aucun int&eacute;rimaire':'Aucun salari&eacute;';
-    if(f.location)msg+=' sur ce site';
-    grid.innerHTML='<div class="worker-empty">'+msg+'.</div>';
-    return;
-  }
-  grid.innerHTML=filtered.map(function(w){
-    var ini=punchInitials(w.name);
-    return '<button type="button" class="worker-tile" data-worker-id="'+w.id+'" data-worker-name="'+punchEscape(w.name)+'"><div class="tile-initials">'+punchEscape(ini)+'</div><div class="tile-name">'+punchEscape(w.name)+'</div></button>';
-  }).join('');
-}
-
-function punchInitials(name){
-  if(!name)return '?';
-  var p=String(name).trim().split(/\s+/);
-  var i=(p[0]||'').charAt(0);
-  var j=p.length>1?(p[p.length-1]||'').charAt(0):'';
-  return (i+j).toUpperCase();
-}
-
-async function onWorkerTileClick(workerId,workerName){
-  punchFlow.worker={id:workerId,name:workerName};
-  // Shortcut : token worker valide en localStorage pour CE worker
-  var ws=getWorkerSessionLS();
-  if(workerSessionIsFresh() && ws && ws.worker_id===workerId){
-    // Si station pas encore validée, on doit passer par B avant
-    if(!punchFlow.station){goToPunchScreen('B');return;}
-    punchFlow.workerToken=ws.token;
-    try{
-      var st=await punchWorkerFetch('clock/state');
-      if(st && st.last_clock_state){
-        punchFlow.workerState=st.last_clock_state;
-        if(st.worker)punchFlow.worker=Object.assign({},punchFlow.worker,st.worker);
-        goToPunchScreen('D');
-        return;
-      }
-    }catch(e){
-      if(e.status===401){
-        clearWorkerSessionLS();
-        punchFlow.workerToken=null;
-        // fall through flow normal
-      }else{
-        toast('Erreur&nbsp;: '+e.message,'error');
-        return;
-      }
-    }
-  }
-  // Pas de shortcut : B si station null, sinon C
-  if(punchFlow.station)goToPunchScreen('C');
-  else goToPunchScreen('B');
-}
-
-// ─── Écran B : scan QR + fallback manuel ──────────────────────────────
-var _punchStream=null;
-var _punchLoopId=null;
-var _punchScanLocked=false;
-
-async function startPunchScan(){
-  stopPunchScan();
-  _punchScanLocked=false;
-  var scanArea=document.getElementById('punchScanArea');
-  var manualArea=document.getElementById('punchManualArea');
-  var btnToggle=document.getElementById('punchToggleMode');
-  if(manualArea)manualArea.hidden=true;
-  if(scanArea)scanArea.hidden=false;
-  if(btnToggle)btnToggle.textContent='Saisir le code à la main';
-  var gn=document.getElementById('punchGreetName');
-  if(gn)gn.textContent=(punchFlow.worker && punchFlow.worker.name)?punchFlow.worker.name:'';
-  try{
-    _punchStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
-    var video=document.getElementById('punchVideo');
-    if(!video){stopPunchScan();return;}
-    video.srcObject=_punchStream;
-    await video.play();
-    loadJsQR(function(){loopPunchScan();});
-  }catch(e){
-    toast('Caméra indisponible, passe en saisie manuelle.','error');
-    togglePunchScanMode('manual');
-  }
-}
-function loopPunchScan(){
-  if(_punchScanLocked)return;
-  if(punchFlow.screen!=='B'){stopPunchScan();return;}
-  var video=document.getElementById('punchVideo');
-  if(!video||!video.videoWidth){_punchLoopId=requestAnimationFrame(loopPunchScan);return;}
-  var cvs=document.createElement('canvas');
-  cvs.width=video.videoWidth;cvs.height=video.videoHeight;
-  var ctx=cvs.getContext('2d');
-  ctx.drawImage(video,0,0,cvs.width,cvs.height);
-  var img=ctx.getImageData(0,0,cvs.width,cvs.height);
-  if(typeof jsQR!=='undefined'){
-    var code=jsQR(img.data,img.width,img.height);
-    if(code && code.data){
-      _punchScanLocked=true;
-      handlePunchScanResult(code.data);
-      return;
-    }
-  }
-  _punchLoopId=requestAnimationFrame(loopPunchScan);
-}
-function stopPunchScan(){
-  if(_punchLoopId){cancelAnimationFrame(_punchLoopId);_punchLoopId=null;}
-  if(_punchStream){_punchStream.getTracks().forEach(function(t){t.stop();});_punchStream=null;}
-  var video=document.getElementById('punchVideo');
-  if(video){try{video.srcObject=null;}catch(e){}}
-}
-
-async function handlePunchScanResult(qrData){
-  stopPunchScan();
-  var token=null;
-  try{var u=new URL(qrData);token=u.searchParams.get('station_token');}catch(e){}
-  if(!token)token=String(qrData||'').trim();
-  if(!token){toast('QR code invalide','error');if(punchFlow.screen==='B')startPunchScan();return;}
-  await validatePunchStationToken(token);
-}
-
-async function validatePunchStationToken(token){
-  try{
-    var d=await punchPublicFetch('stations/verify',{method:'POST',body:JSON.stringify({token:token})});
-    if(!d || !d.ok || !d.station){throw new Error('Station invalide');}
-    punchFlow.station={id:d.station.id,name:d.station.name,secret_token:token};
-    goToPunchScreen('C');
-  }catch(e){
-    toast('Station invalide&nbsp;: '+e.message,'error');
-    if(punchFlow.screen==='B')startPunchScan();
-  }
-}
-
-function togglePunchScanMode(force){
-  var scanArea=document.getElementById('punchScanArea');
-  var manualArea=document.getElementById('punchManualArea');
-  var btn=document.getElementById('punchToggleMode');
-  var goManual=(force==='manual')||(manualArea && manualArea.hidden);
-  if(goManual){
-    stopPunchScan();
-    if(scanArea)scanArea.hidden=true;
-    if(manualArea)manualArea.hidden=false;
-    if(btn)btn.textContent='Utiliser la caméra';
-    setTimeout(function(){var i=document.getElementById('punchCodeInput');if(i)i.focus();},50);
-  }else{
-    if(manualArea)manualArea.hidden=true;
-    if(scanArea)scanArea.hidden=false;
-    if(btn)btn.textContent='Saisir le code à la main';
-    startPunchScan();
-  }
-}
-
-async function submitPunchCode(){
-  var code=((document.getElementById('punchCodeInput')||{}).value||'').trim();
-  if(!code){toast('Entre le code du poste','error');return;}
-  try{
-    var d=await punchPublicFetch('stations/verify',{method:'POST',body:JSON.stringify({code_short:code})});
-    if(!d || !d.ok || !d.station || !d.station.secret_token){
-      throw new Error('Station invalide');
-    }
-    punchFlow.station={id:d.station.id,name:d.station.name,secret_token:d.station.secret_token};
-    goToPunchScreen('C');
-  }catch(e){
-    toast('Station invalide&nbsp;: '+e.message,'error');
-  }
-}
-
-// ─── Écran C : PIN (status fetch → create|verify|locked) ──────────────
-async function enterPinScreen(){
-  if(!punchFlow.worker||!punchFlow.station){toast('Flow interrompu','error');resetPunchFlow();return;}
-  // Reset UI
-  punchFlow.pinEntry={digits:'',mode:'verify',firstAttempt:''};
-  punchFlow.clientFailCount=0;
-  var flow=document.getElementById('punchPinFlow');
-  var locked=document.getElementById('punchLockedFlow');
-  if(flow)flow.hidden=false;
-  if(locked)locked.hidden=true;
-  renderPinDots();
-  // Status fetch
-  var stHeaders={'X-Station-Token':punchFlow.station.secret_token};
-  try{
-    var st=await punchPublicFetch('workers/'+punchFlow.worker.id+'/pin/status',{method:'GET'},stHeaders);
-    if(st.locked){showPinLocked();return;}
-    if(!st.has_pin){
-      // Mode create (2-pass)
-      punchFlow.pinEntry.mode='create';
-      updatePinUI('Cr&eacute;e ton PIN à 6 chiffres','Tu en auras besoin à chaque pointage, choisis-en un facile à retenir.');
-    }else{
-      // Mode verify
-      punchFlow.pinEntry.mode='verify';
-      updatePinUI('Ton PIN','Tape ton code à 6 chiffres.');
-    }
-  }catch(e){
-    toast('Erreur&nbsp;: '+e.message,'error');
-    resetPunchFlow();
-  }
-}
-function updatePinUI(title,subtitle){
-  var t=document.getElementById('punchPinTitle');
-  var s=document.getElementById('punchPinSubtitle');
-  if(t)t.textContent=title;
-  if(s)s.textContent=subtitle||'';
-  renderPinDots();
-}
-function renderPinDots(){
-  var dots=document.getElementById('pinDots');
-  if(!dots)return;
-  var n=punchFlow.pinEntry.digits.length;
-  var html='';
-  for(var i=0;i<6;i++){
-    html+='<div class="pin-dot'+(i<n?' filled':'')+'"></div>';
-  }
-  dots.innerHTML=html;
-}
-function pinAddDigit(d){
-  hapticTap();
-  if(punchFlow.pinEntry.digits.length>=6)return;
-  punchFlow.pinEntry.digits+=d;
-  renderPinDots();
-  if(punchFlow.pinEntry.digits.length===6){
-    // Auto-submit selon le mode
-    setTimeout(handlePinFull,80);
-  }
-}
-function pinBackspace(){
-  hapticTap();
-  var cur=punchFlow.pinEntry.digits;
-  if(!cur.length)return;
-  punchFlow.pinEntry.digits=cur.substring(0,cur.length-1);
-  renderPinDots();
-}
-async function handlePinFull(){
-  var mode=punchFlow.pinEntry.mode;
-  var digits=punchFlow.pinEntry.digits;
-  if(mode==='create'){
-    if(!punchFlow.pinEntry.firstAttempt){
-      // Première passe : stock + demander confirmation
-      punchFlow.pinEntry.firstAttempt=digits;
-      punchFlow.pinEntry.digits='';
-      punchFlow.pinEntry.mode='create_confirm';
-      updatePinUI('Confirme ton PIN','Retape-le pour confirmer.');
-      return;
-    }
-  }else if(mode==='create_confirm'){
-    if(digits!==punchFlow.pinEntry.firstAttempt){
-      toast('Les deux saisies ne correspondent pas. Recommence.','error');
-      punchFlow.pinEntry.digits='';
-      punchFlow.pinEntry.firstAttempt='';
-      punchFlow.pinEntry.mode='create';
-      updatePinUI('Cr&eacute;e ton PIN à 6 chiffres','Recommence en tapant ton PIN une fois.');
-      return;
-    }
-    // Match : send create
-    await sendPinCreate(digits);
-    return;
-  }else{
-    // verify
-    await sendPinVerify(digits);
-  }
-}
-
-async function sendPinCreate(pin){
-  try{
-    var d=await punchPublicFetch('workers/'+punchFlow.worker.id+'/pin/create',{
-      method:'POST',
-      body:JSON.stringify({pin:pin,station_token:punchFlow.station.secret_token})
-    });
-    // 201 + {ok, token, expires_at, worker}
-    onPinSuccess(d);
-  }catch(e){
-    toast('Erreur&nbsp;: '+e.message,'error');
-    punchFlow.pinEntry={digits:'',mode:'create',firstAttempt:''};
-    updatePinUI('Cr&eacute;e ton PIN à 6 chiffres','');
-  }
-}
-async function sendPinVerify(pin){
-  try{
-    var d=await punchPublicFetch('workers/'+punchFlow.worker.id+'/pin/verify',{
-      method:'POST',
-      body:JSON.stringify({pin:pin,station_token:punchFlow.station.secret_token})
-    });
-    onPinSuccess(d);
-  }catch(e){
-    if(e.status===401){
-      // Code incorrect ou locked (binary response)
-      toast('Code incorrect','error');
-      punchFlow.clientFailCount++;
-      punchFlow.pinEntry.digits='';
-      renderPinDots();
-      // Re-fetch status pour détecter lock côté serveur
-      if(punchFlow.clientFailCount>=3){
-        await refetchPinStatus();
-      }
-    }else{
-      toast('Erreur&nbsp;: '+e.message,'error');
-      punchFlow.pinEntry.digits='';renderPinDots();
-    }
-  }
-}
-async function refetchPinStatus(){
-  try{
-    var st=await punchPublicFetch('workers/'+punchFlow.worker.id+'/pin/status',{method:'GET'},{'X-Station-Token':punchFlow.station.secret_token});
-    if(st.locked){showPinLocked();}
-  }catch(e){/* silent */}
-}
-
-function onPinSuccess(data){
-  punchFlow.workerToken=data.token;
-  if(data.worker){
-    punchFlow.worker=Object.assign({},punchFlow.worker,data.worker);
-    punchFlow.workerState=data.worker.last_clock_state||'idle';
-  }
-  // Persist session localStorage (16h TTL, cleared on departure)
-  setWorkerSessionLS(data.token,data.expires_at,punchFlow.worker.id,punchFlow.worker.name);
-  goToPunchScreen('D');
-}
-
-function showPinLocked(){
-  var flow=document.getElementById('punchPinFlow');
-  var locked=document.getElementById('punchLockedFlow');
-  if(flow)flow.hidden=true;
-  if(locked)locked.hidden=false;
-  if(punchFlow.lockedTimer)clearInterval(punchFlow.lockedTimer);
-  punchFlow.lockedSecs=5;
-  var secsEl=document.getElementById('punchLockedSecs');
-  if(secsEl)secsEl.textContent=String(punchFlow.lockedSecs);
-  punchFlow.lockedTimer=setInterval(function(){
-    punchFlow.lockedSecs--;
-    if(secsEl)secsEl.textContent=String(Math.max(0,punchFlow.lockedSecs));
-    if(punchFlow.lockedSecs<=0){clearInterval(punchFlow.lockedTimer);punchFlow.lockedTimer=null;resetPunchFlow();}
-  },1000);
-}
-
-// ─── Écran D : action buttons ─────────────────────────────────────────
-function renderActionButtons(){
-  // V2 — 1 seul bouton "Pointer", couleur reflète l'effet attendu :
-  // vert si idle (la prochaine action sera une entrée), rouge sinon.
-  var state=punchFlow.workerState||'idle';
-  // V2 : on_break legacy → traité comme at_work pour le label.
-  if(state==='on_break')state='at_work';
-  var labels={idle:'Prêt à pointer ton entrée.',at_work:'Prêt à pointer ta sortie.'};
-  var lbl=document.getElementById('punchStateLabel');
-  if(lbl)lbl.textContent=labels[state]||'';
-  var btn=document.getElementById('punchSingleBtn');
-  if(btn){
-    btn.disabled=false;
-    btn.classList.toggle('punch-single-entry',state==='idle');
-    btn.classList.toggle('punch-single-exit',state==='at_work');
-  }
-}
-
-async function onActionClick(){
-  // V2 — 1 seule action côté client : envoie kind='punch'. Le serveur
-  // bascule entry/exit selon last_clock_state. La réponse contient
-  // {action:'entry'|'exit', time, auto_closed_break?}.
-  if(!punchFlow.station||!punchFlow.workerToken){toast('Session perdue, recommence','error');resetPunchFlow();return;}
-  hapticTap();
-  var btn=document.getElementById('punchSingleBtn');
-  if(btn)btn.disabled=true;
-  try{
-    var d=await punchWorkerFetch('clock',{method:'POST',body:JSON.stringify({station_token:punchFlow.station.secret_token,kind:'punch'})});
-    var realAction=d.action||'entry';
-    var time=d.time||'';
-    if(realAction==='exit'){
-      // Fin de session — on libère la session worker localStorage pour que
-      // le prochain pointage redemande PIN (pas de session 16h muette).
-      clearWorkerSessionLS();
-      punchFlow.workerToken=null;
-      punchFlow.workerState='idle';
-    }else{
-      punchFlow.workerState='at_work';
-    }
-    showPunchConfirm(realAction,time,d.auto_closed_break);
-  }catch(e){
-    if(e.status===409 && e.body && e.body.current_state){
-      punchFlow.workerState=e.body.current_state;
-      toast('Action impossible dans l’état actuel','error');
-      renderActionButtons();
-    }else if(e.status===401){
-      clearWorkerSessionLS();
-      toast('Session expirée','error');
-      resetPunchFlow();
-    }else{
-      toast('Erreur : '+e.message,'error');
-      renderActionButtons();
-    }
-  }
-}
-
-// ─── Écran E : confirmation plein écran ───────────────────────────────
-function showPunchConfirm(action,time,autoClosed){
-  // V2 — labels entry/exit. Anciens (arrival/departure/break_*) gardés
-  // pour rétrocompat si une réponse legacy passe ici.
-  var labels={
-    entry:'Entrée enregistrée',
-    exit:'Sortie enregistrée',
-    arrival:'Arrivée enregistrée',
-    departure:'Départ enregistré',
-    break_start:'Début de pause',
-    break_end:'Fin de pause'
-  };
-  var msg=document.getElementById('punchConfirmMsg');
-  var tm=document.getElementById('punchConfirmTime');
-  var ftr=document.getElementById('punchConfirmFooter');
-  if(msg)msg.textContent=labels[action]||'Enregistré';
-  if(tm)tm.textContent=time||'';
-  if(ftr){
-    var footer='Merci '+(punchFlow.worker?punchFlow.worker.name.split(' ')[0]:'')+' !';
-    if(autoClosed)footer+=' (pause fermée automatiquement)';
-    if(action==='exit'||action==='departure')footer='Bonne soirée !';
-    if(action==='entry'||action==='arrival')footer='Bonne journée !';
-    ftr.textContent=footer;
-  }
-  goToPunchScreen('E');
-  if(punchFlow.confirmTimer)clearInterval(punchFlow.confirmTimer);
-  punchFlow.confirmSecs=3;
-  var secsEl=document.getElementById('punchConfirmSecs');
-  if(secsEl)secsEl.textContent=String(punchFlow.confirmSecs);
-  punchFlow.confirmTimer=setInterval(function(){
-    punchFlow.confirmSecs--;
-    if(secsEl)secsEl.textContent=String(Math.max(0,punchFlow.confirmSecs));
-    if(punchFlow.confirmSecs<=0){clearInterval(punchFlow.confirmTimer);punchFlow.confirmTimer=null;resetPunchFlow();}
-  },1000);
-}
-
-// ─── Boot URL param station_token ─────────────────────────────────────
-async function consumeUrlStationToken(){
-  try{
-    var params=new URLSearchParams(window.location.search);
-    var t=params.get('station_token');
-    if(!t)return;
-    // Remove from URL for privacy
-    try{history.replaceState({},'',window.location.pathname);}catch(e){}
-    var d=await punchPublicFetch('stations/verify',{method:'POST',body:JSON.stringify({token:t})});
-    if(d && d.ok && d.station){
-      punchFlow.station={id:d.station.id,name:d.station.name,secret_token:t};
-    }
-  }catch(e){/* silent, fall back to flow normal */}
-}
-
-// ─── Event delegation (DOMContentLoaded wrapper) ──────────────────────
-document.addEventListener('DOMContentLoaded',function(){
-  // Grille workers (delegation car tiles insérées dynamiquement)
-  var grid=document.getElementById('workerGrid');
-  if(grid){
-    grid.addEventListener('click',function(e){
-      var t=e.target.closest('.worker-tile');
-      if(!t)return;
-      var id=parseInt(t.getAttribute('data-worker-id'),10);
-      var nm=t.getAttribute('data-worker-name')||'';
-      if(!id||isNaN(id))return;
-      onWorkerTileClick(id,nm);
-    });
-  }
-  // Keypad PIN
-  var kp=document.getElementById('pinKeypad');
-  if(kp){
-    kp.addEventListener('click',function(e){
-      var b=e.target.closest('button');
-      if(!b||b.disabled)return;
-      if(b.hasAttribute('data-digit'))pinAddDigit(b.getAttribute('data-digit'));
-      else if(b.getAttribute('data-pin-action')==='backspace')pinBackspace();
-    });
-  }
-  // Écran D action buttons
-  var ag=document.getElementById('actionGrid');
-  if(ag){
-    ag.addEventListener('click',function(e){
-      var b=e.target.closest('.action-btn');
-      if(!b||b.disabled)return;
-      var a=b.getAttribute('data-clock');
-      if(a)onActionClick(a);
-    });
-  }
-  // Écran E : tap anywhere pour accélérer
-  var eScr=document.getElementById('punchE');
-  if(eScr){
-    eScr.addEventListener('click',function(){
-      if(punchFlow.confirmTimer){clearInterval(punchFlow.confirmTimer);punchFlow.confirmTimer=null;}
-      resetPunchFlow();
-    });
-  }
-  // Input manuel code : Enter = submit
-  var ci=document.getElementById('punchCodeInput');
-  if(ci){
-    ci.addEventListener('keydown',function(e){if(e.key==='Enter')submitPunchCode();});
-  }
-  // Segmented controls (écran A)
-  var cf=document.getElementById('contractFilter');
-  if(cf){
-    cf.addEventListener('click',function(e){
-      var b=e.target.closest('button[data-filter-contract]');
-      if(!b)return;
-      var val=b.getAttribute('data-filter-contract');
-      var f=loadPunchFilter();
-      if(f.contract===val)return;
-      f.contract=val;
-      savePunchFilter(f);
-      renderFilteredGrid();
-    });
-  }
-  var lf=document.getElementById('locationFilter');
-  if(lf){
-    lf.addEventListener('click',function(e){
-      var b=e.target.closest('button[data-filter-location]');
-      if(!b)return;
-      var val=b.getAttribute('data-filter-location');
-      var f=loadPunchFilter();
-      if(f.location===val)return;
-      f.location=val;
-      savePunchFilter(f);
-      // Update UI active state sur les boutons
-      lf.querySelectorAll('button').forEach(function(x){
-        x.classList.toggle('active',x.getAttribute('data-filter-location')===val);
-      });
-      renderFilteredGrid();
-    });
-  }
-  var af=document.getElementById('agencyFilter');
-  if(af){
-    af.addEventListener('click',function(e){
-      var b=e.target.closest('button[data-filter-agency]');
-      if(!b)return;
-      var val=b.getAttribute('data-filter-agency');
-      var f=loadPunchFilter();
-      var current=f.agency||'';
-      if(current===val)return;
-      f.agency=val||null;
-      savePunchFilter(f);
-      af.querySelectorAll('button').forEach(function(x){
-        x.classList.toggle('active',x.getAttribute('data-filter-agency')===val);
-      });
-      renderFilteredGrid();
-    });
-  }
-});
 
 // ═══ STATIONS admin page (Phase 5) ═══
 var _stationsCache=[];
@@ -3686,42 +2348,38 @@ document.addEventListener('DOMContentLoaded',function(){
     initBorne();
     return;
   }
-  // Token admin expiré/près de l'être → clear avant tout call API (défend Phase 1).
+  // Token admin expiré/près de l'être → clear avant tout call API.
   if(getToken() && tokenIsExpiringSoon()){
     clearToken();
     clearSession();
   }
-  // Phase 5 fix — invalider les sessions worker LEGACY (Phase 1-4) qui traînent
-  // en sessionStorage. Elles ne sont plus exploitables par Phase 5 (le worker
-  // passe par PIN+station, pas par la tab "Salarié" de loginScreen), et leur
-  // présence déclenchait des effets parasites via updateEmpView() (avant la
-  // neutralisation du tick 1s ci-dessus). Belt-and-braces : on laisse tomber
-  // token + session si role='worker' détecté au boot.
+  // Cleanup défensif : sessions worker legacy (badge/name login pré-PIN-removal,
+  // ou clés localStorage 'worker_session') qui traînent → on vide. Plus aucun
+  // flow front ne consomme une session worker depuis le PIN-removal.
   var bootSess=getSession();
   if(bootSess && bootSess.role==='worker'){
     clearSession();
     clearToken();
   }
-  await initData();
-  refreshSel();renderLiveList();
-  // URL ?station_token=... (scan QR direct) → validation silencieuse, URL cleaned.
-  await consumeUrlStationToken();
-  // Session admin valide → adminScreen. Sinon → punchScreen (vue par défaut Phase 5).
+  try{localStorage.removeItem('worker_session');}catch(e){}
+  // Session admin valide → charge les données + adminScreen. Sinon → loginScreen.
+  // "/" et "/admin" se comportent désormais identiquement (post-PIN-removal).
   var sess=getSession();
   if(sess && sess.role==='admin' && getToken()){
+    await initData();
+    refreshSel();renderLiveList();
     showAdminView();
     return;
   }
-  // /admin → on saute la grille publique et on montre direct le login admin.
-  // (Si une session admin valide existe, le check ci-dessus a déjà retourné.)
-  if(ADMIN_MODE){
-    showLoginScreen();
-    return;
-  }
-  // Worker localStorage session expirée → clean (sans bloquer, le shortcut tentera
-  // un /clock/state au clic de tuile et reviendra au flow normal sur 401).
-  showPunchScreen();
+  showLoginScreen();
 })();
+
+function showLoginScreen(){
+  document.getElementById('loginScreen').style.display='flex';
+  document.getElementById('adminScreen').style.display='none';
+  var pwd=document.getElementById('loginAdminPwd');
+  if(pwd){pwd.value='';setTimeout(function(){try{pwd.focus();}catch(e){}},60);}
+}
 document.getElementById('addModal').addEventListener('click',function(e){if(e.target===this)closeAddModal();});
 document.getElementById('editModal').addEventListener('click',function(e){if(e.target===this)closeEditModal();});
 document.getElementById('newName').addEventListener('keydown',function(e){if(e.key==='Enter')addWorker();});
