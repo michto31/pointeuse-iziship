@@ -166,6 +166,9 @@ async function closeOrphanPointages(workerId) {
 
 // Types d'événements security_events. Non contraint en DB (TEXT libre) mais toute
 // insertion doit passer par logSecurityEvent() qui vérifie le type.
+// interim_card_limit_exceeded / interim_create_global_limit_exceeded : ne sont
+// plus émis (limites métier retirées) mais conservés pour rétrocompat des
+// events historiques affichés dans le journal sécurité.
 var SECURITY_EVENT_TYPES = { pin_fail: true, pin_lock: true, pin_create: true, pin_reset: true, station_regen: true, station_secret_view: true, rfid_enroll: true, rfid_unenroll: true, rfid_clock: true, rfid_unknown_card: true, rfid_locked_card: true, rfid_station_invalid: true, pointage_orphan_closed: true, rfid_clock_via_group_card: true, worker_created_via_borne: true, worker_approved: true, interim_card_limit_exceeded: true, interim_create_global_limit_exceeded: true, interim_card_created: true, interim_card_updated: true, interim_card_deleted: true, sync_requested: true };
 async function logSecurityEvent(eventType, workerId, stationId, details) {
   if (!SECURITY_EVENT_TYPES[eventType]) throw new Error("Invalid security event type: " + eventType);
@@ -518,8 +521,10 @@ exports.handler = async function (event) {
 
     // POST /api/interim/create [PUBLIC, 5/min/IP bucket interim_create]
     // body : {card_uid, station_token, first_name, last_name, phone, agency}
-    // Crée un worker intérimaire avec pending_admin_approval=true. Limites :
-    // 1 création/carte/jour + 5 créations globales/jour (anti-abus).
+    // Crée un worker intérimaire avec pending_admin_approval=true. Les limites
+    // métier "1/carte/jour" et "5 global/jour" ont été retirées (dépôt sous
+    // supervision admin, risque d'abus nul). Le rate-limit HTTP générique
+    // (5/min/IP bucket interim_create) reste comme garde-fou anti-spam brut.
     if (method === "POST" && path === "interim/create") {
       if (!checkRateLimit(event, 5, "interim_create")) return json({ error: "Too many requests" }, 429);
       var iCreateCardUid = String((body && body.card_uid) || "").trim().toUpperCase();
@@ -543,33 +548,6 @@ exports.handler = async function (event) {
       );
       if (!iCreateAgencyCheck) return err("Agence inconnue", 400);
       var iCreateToday = getParisDate();
-      // Limite par carte (1/jour)
-      var iCreateCardCount = await sql1(
-        "SELECT count FROM interim_cards_creations WHERE card_uid=$1 AND date=$2",
-        [iCreateCardUid, iCreateToday]
-      );
-      if (iCreateCardCount && iCreateCardCount.count >= 1) {
-        await logSecurityEvent("interim_card_limit_exceeded", null, iCreateStation.id, {
-          card_uid_prefix: iCreateCardUid.substring(0, 4) + "***",
-          attempted_name: iCreateFirst + " " + iCreateLast,
-          attempted_agency: iCreateAgency
-        });
-        return err("Limite de création atteinte pour cette carte aujourd'hui", 429);
-      }
-      // Limite globale (5/jour, basée sur created_at converti en heure de Paris)
-      var iCreateGlobalCount = await sql1(
-        "SELECT COUNT(*)::int AS n FROM workers " +
-        "WHERE COALESCE(created_via_borne, false)=true " +
-        "AND (created_at AT TIME ZONE 'Europe/Paris')::date = $1::date",
-        [iCreateToday]
-      );
-      if (iCreateGlobalCount && iCreateGlobalCount.n >= 5) {
-        await logSecurityEvent("interim_create_global_limit_exceeded", null, iCreateStation.id, {
-          card_uid_prefix: iCreateCardUid.substring(0, 4) + "***",
-          current_count: iCreateGlobalCount.n
-        });
-        return err("Limite globale de créations atteinte aujourd'hui", 429);
-      }
       var iCreateName = iCreateFirst + " " + iCreateLast;
       var iCreateNew = await sql1(
         "INSERT INTO workers (name, type, agency, phone, sched_in, sched_out, last_clock_state, active, pending_admin_approval, created_via_borne) " +
