@@ -166,7 +166,7 @@ async function closeOrphanPointages(workerId) {
 
 // Types d'événements security_events. Non contraint en DB (TEXT libre) mais toute
 // insertion doit passer par logSecurityEvent() qui vérifie le type.
-var SECURITY_EVENT_TYPES = { pin_fail: true, pin_lock: true, pin_create: true, pin_reset: true, station_regen: true, station_secret_view: true, rfid_enroll: true, rfid_unenroll: true, rfid_clock: true, rfid_unknown_card: true, rfid_locked_card: true, rfid_station_invalid: true, pointage_orphan_closed: true, rfid_clock_via_group_card: true, worker_created_via_borne: true, worker_approved: true, interim_card_limit_exceeded: true, interim_create_global_limit_exceeded: true, sync_requested: true };
+var SECURITY_EVENT_TYPES = { pin_fail: true, pin_lock: true, pin_create: true, pin_reset: true, station_regen: true, station_secret_view: true, rfid_enroll: true, rfid_unenroll: true, rfid_clock: true, rfid_unknown_card: true, rfid_locked_card: true, rfid_station_invalid: true, pointage_orphan_closed: true, rfid_clock_via_group_card: true, worker_created_via_borne: true, worker_approved: true, interim_card_limit_exceeded: true, interim_create_global_limit_exceeded: true, interim_card_created: true, interim_card_updated: true, interim_card_deleted: true, sync_requested: true };
 async function logSecurityEvent(eventType, workerId, stationId, details) {
   if (!SECURITY_EVENT_TYPES[eventType]) throw new Error("Invalid security event type: " + eventType);
   await sql(
@@ -616,6 +616,107 @@ exports.handler = async function (event) {
         "ORDER BY created_at DESC"
       );
       return json({ workers: pendingWorkers });
+    }
+
+    // ═══ Gestion cartes intérim (admin CRUD via UI) ═══════════════════════
+    // 4 routes /api/admin/interim-cards* — toutes auth admin. Avant ce bloc,
+    // l'enrôlement carte se faisait uniquement par SQL direct.
+
+    // GET /api/admin/interim-cards [admin] — liste avec usage_count agrégé.
+    if (method === "GET" && path === "admin/interim-cards") {
+      await requireAuth(event, "admin");
+      var cards = await sql(
+        "SELECT c.id, c.uid, c.label, c.active, c.created_at, " +
+        "COALESCE(SUM(cc.count), 0)::int AS usage_count " +
+        "FROM interim_cards c " +
+        "LEFT JOIN interim_cards_creations cc ON cc.card_uid = c.uid " +
+        "GROUP BY c.id, c.uid, c.label, c.active, c.created_at " +
+        "ORDER BY c.created_at DESC"
+      );
+      return json({ cards: cards });
+    }
+
+    // POST /api/admin/interim-cards [admin] — body {uid, label?}.
+    // Validation : uid 8-20 chiffres, label <=100 chars. Refuse 409 si uid
+    // déjà présent dans interim_cards OU dans workers.rfid_uid (anti-collision
+    // bidirectionnelle avec /api/workers/:id/rfid). Log avec uid complet
+    // (audit admin, pas leak public — endpoint admin-only).
+    if (method === "POST" && path === "admin/interim-cards") {
+      var addCardAuth = await requireAuth(event, "admin");
+      var addCardUid = String((body && body.uid) || "").trim();
+      if (!/^[0-9]{8,20}$/.test(addCardUid)) return err("Format UID invalide (8-20 chiffres)");
+      var addCardLabel = String((body && body.label) || "").trim();
+      if (addCardLabel.length > 100) return err("Label trop long (max 100 caractères)");
+      var addCardExists = await sql1("SELECT id FROM interim_cards WHERE uid=$1", [addCardUid]);
+      if (addCardExists) return err("Cette carte existe déjà dans la liste intérim", 409);
+      var addCardWorker = await sql1("SELECT id FROM workers WHERE rfid_uid=$1", [addCardUid]);
+      if (addCardWorker) return err("Cette carte est déjà associée à un salarié", 409);
+      var addCardRow = await sql1(
+        "INSERT INTO interim_cards (uid, label, active) VALUES ($1, $2, true) " +
+        "RETURNING id, uid, label, active, created_at",
+        [addCardUid, addCardLabel || null]
+      );
+      await logSecurityEvent("interim_card_created", null, null, {
+        admin_worker_id: addCardAuth.worker_id,
+        card_id: addCardRow.id,
+        uid: addCardUid,
+        label: addCardLabel || null
+      });
+      return json({ card: addCardRow }, 201);
+    }
+
+    // PUT /api/admin/interim-cards/:id [admin] — body {label?, active?}.
+    // Au moins un des deux champs requis. Update partiel via COALESCE.
+    if (method === "PUT" && seg[0] === "admin" && seg[1] === "interim-cards" && seg[2] && !seg[3]) {
+      var updCardAuth = await requireAuth(event, "admin");
+      var updCardId = parseInt(seg[2], 10);
+      if (!updCardId) return err("ID invalide");
+      var hasLabel = body && Object.prototype.hasOwnProperty.call(body, "label");
+      var hasActive = body && Object.prototype.hasOwnProperty.call(body, "active");
+      if (!hasLabel && !hasActive) return err("label ou active requis");
+      var updCardLabel = hasLabel ? String(body.label || "").trim() : null;
+      if (hasLabel && updCardLabel.length > 100) return err("Label trop long (max 100 caractères)");
+      var updCardActive = hasActive ? !!body.active : null;
+      var updCardRow = await sql1(
+        "UPDATE interim_cards SET " +
+        "label = CASE WHEN $2::bool THEN $3 ELSE label END, " +
+        "active = CASE WHEN $4::bool THEN $5 ELSE active END " +
+        "WHERE id=$1 " +
+        "RETURNING id, uid, label, active, created_at",
+        [updCardId, hasLabel, hasLabel ? (updCardLabel || null) : null, hasActive, hasActive ? updCardActive : null]
+      );
+      if (!updCardRow) return err("Carte introuvable", 404);
+      await logSecurityEvent("interim_card_updated", null, null, {
+        admin_worker_id: updCardAuth.worker_id,
+        card_id: updCardId,
+        uid: updCardRow.uid,
+        changes: {
+          label: hasLabel ? (updCardLabel || null) : undefined,
+          active: hasActive ? updCardActive : undefined
+        }
+      });
+      return json({ card: updCardRow });
+    }
+
+    // DELETE /api/admin/interim-cards/:id [admin] — supprime la carte. Les
+    // entrées interim_cards_creations (compteur d'usage) restent intentionnelle-
+    // ment (audit / historique). Log avec uid complet.
+    if (method === "DELETE" && seg[0] === "admin" && seg[1] === "interim-cards" && seg[2] && !seg[3]) {
+      var delCardAuth = await requireAuth(event, "admin");
+      var delCardId = parseInt(seg[2], 10);
+      if (!delCardId) return err("ID invalide");
+      var delCardRow = await sql1(
+        "DELETE FROM interim_cards WHERE id=$1 RETURNING id, uid, label",
+        [delCardId]
+      );
+      if (!delCardRow) return err("Carte introuvable", 404);
+      await logSecurityEvent("interim_card_deleted", null, null, {
+        admin_worker_id: delCardAuth.worker_id,
+        card_id: delCardId,
+        uid: delCardRow.uid,
+        label: delCardRow.label
+      });
+      return json({ ok: true });
     }
 
     // POST /api/admin/workers/:id/approve [admin] — passe un worker pending à
