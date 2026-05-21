@@ -467,8 +467,10 @@ exports.handler = async function (event) {
     // Rate-limit 429 ne logue PAS d'event (sinon DoS = spam du journal).
     if (method === "POST" && path === "auth/rfid") {
       if (!checkRateLimit(event, 10, "rfid_auth")) return json({ error: "Too many requests" }, 429);
-      var rfidAuthUid = String((body && body.uid) || "").trim().toUpperCase();
-      if (!/^[0-9A-F]{10}$/.test(rfidAuthUid)) return err("Format UID invalide");
+      // UID = sortie brute du lecteur HID Neuftech (10 chiffres décimaux, ex.
+      // "0009811224"). Regex tolère 8-20 chars pour absorber autres scanners.
+      var rfidAuthUid = String((body && body.uid) || "").trim();
+      if (!/^[0-9]{8,20}$/.test(rfidAuthUid)) return err("Format UID invalide");
       var rfidAuthPrefix = rfidAuthUid.substring(0, 4) + "***";
       var rfidAuthStationToken = String((body && body.station_token) || "").trim();
       var rfidAuthStation = await sql1("SELECT id FROM postes WHERE secret_token=$1 AND active=true", [rfidAuthStationToken]);
@@ -1321,16 +1323,17 @@ exports.handler = async function (event) {
     }
 
     // POST /api/workers/:id/rfid [admin] — Phase 6
-    // Body: {uid} (10 chars hex uppercase). Rejette 400 si format KO, 404 si
-    // worker introuvable, 409 si UID déjà pris par un autre worker.
-    // Log rfid_enroll avec uid_prefix (4 premiers chars + ***). JAMAIS l'UID
-    // complet en log (réservé à rfid_unknown_card pour enrôlement à chaud).
+    // Body: {uid} (8-20 chiffres décimaux, sortie lecteur HID Neuftech).
+    // Rejette 400 si format KO, 404 si worker introuvable, 409 si UID déjà
+    // pris par un autre worker. Log rfid_enroll avec uid_prefix (4 premiers
+    // chars + ***). JAMAIS l'UID complet en log (réservé à rfid_unknown_card
+    // pour enrôlement à chaud).
     if (method === "POST" && seg[0] === "workers" && seg[1] && seg[2] === "rfid" && !seg[3]) {
       var rfidEnrollAuth = await requireAuth(event, "admin");
       var rfidEnrollWorkerId = parseInt(seg[1]);
       if (!rfidEnrollWorkerId) return err("Worker ID invalide");
-      var rfidEnrollUid = String((body && body.uid) || "").trim().toUpperCase();
-      if (!/^[0-9A-F]{10}$/.test(rfidEnrollUid)) return err("Format UID invalide");
+      var rfidEnrollUid = String((body && body.uid) || "").trim();
+      if (!/^[0-9]{8,20}$/.test(rfidEnrollUid)) return err("Format UID invalide");
       var rfidEnrollWorker = await sql1("SELECT id FROM workers WHERE id=$1", [rfidEnrollWorkerId]);
       if (!rfidEnrollWorker) return err("Worker introuvable", 404);
       // Anti-collision Phase 6 ext : refuser une UID déjà déclarée comme carte
@@ -1447,10 +1450,11 @@ async function initDB() {
   await sql("CREATE INDEX IF NOT EXISTS idx_workers_location_type ON workers(location, type)");
 
   // ═══ Phase 6 — RFID : association carte ↔ worker ═══
-  // Colonne rfid_uid : UID EM4100 en ASCII hex uppercase (10 chars) ou NULL.
-  // UNIQUE partiel : plusieurs workers peuvent avoir NULL simultanément (pas
-  // encore enrôlés), mais deux workers ne peuvent pas partager le même UID.
-  // Format validé côté route (regex /^[0-9A-F]{10}$/), pas de CHECK en DB.
+  // Colonne rfid_uid : UID lecteur HID Neuftech (8-20 chiffres décimaux,
+  // typiquement 10) ou NULL. UNIQUE partiel : plusieurs workers peuvent avoir
+  // NULL simultanément (pas encore enrôlés), mais deux workers ne peuvent pas
+  // partager le même UID. Format validé côté route (regex /^[0-9]{8,20}$/),
+  // pas de CHECK en DB.
   await sql("ALTER TABLE workers ADD COLUMN IF NOT EXISTS rfid_uid TEXT");
   await sql("CREATE UNIQUE INDEX IF NOT EXISTS idx_workers_rfid_uid ON workers(rfid_uid) WHERE rfid_uid IS NOT NULL");
 
@@ -1467,13 +1471,20 @@ async function initDB() {
 
   // interim_cards : whitelist des cartes RFID partagées (distribuées le matin
   //   à l'équipe intérim, rendues le soir). Différent de workers.rfid_uid qui
-  //   est une carte personnelle. uid VARCHAR(10) = 10 chars hex EM4100.
-  await sql("CREATE TABLE IF NOT EXISTS interim_cards (id SERIAL PRIMARY KEY, uid VARCHAR(10) UNIQUE NOT NULL, label TEXT, active BOOLEAN DEFAULT true, created_at TIMESTAMPTZ DEFAULT NOW())");
+  //   est une carte personnelle. uid VARCHAR(20) = 8-20 chars (sortie HID
+  //   Neuftech = 10 chiffres décimaux ; marge pour autres scanners).
+  await sql("CREATE TABLE IF NOT EXISTS interim_cards (id SERIAL PRIMARY KEY, uid VARCHAR(20) UNIQUE NOT NULL, label TEXT, active BOOLEAN DEFAULT true, created_at TIMESTAMPTZ DEFAULT NOW())");
   await sql("CREATE INDEX IF NOT EXISTS idx_interim_cards_uid_active ON interim_cards(uid) WHERE active=true");
+  // Migration : élargir d'anciennes installs en VARCHAR(10) → VARCHAR(20).
+  // ALTER COLUMN TYPE est no-op si la cible est déjà VARCHAR(20). Pas de
+  // CHECK + IF EXISTS standard sur les types — on swallow l'erreur si Neon
+  // s'en plaint (peu probable pour un upcast VARCHAR(N)→VARCHAR(M) M>N).
+  try { await sql("ALTER TABLE interim_cards ALTER COLUMN uid TYPE VARCHAR(20)"); } catch (_e) {}
 
   // interim_cards_creations : compteur (carte, jour) pour limiter la création
   //   à 1 nouveau worker par carte par jour (anti-abus). PK composite.
-  await sql("CREATE TABLE IF NOT EXISTS interim_cards_creations (card_uid VARCHAR(10) NOT NULL, date DATE NOT NULL, count INT DEFAULT 0, PRIMARY KEY (card_uid, date))");
+  await sql("CREATE TABLE IF NOT EXISTS interim_cards_creations (card_uid VARCHAR(20) NOT NULL, date DATE NOT NULL, count INT DEFAULT 0, PRIMARY KEY (card_uid, date))");
+  try { await sql("ALTER TABLE interim_cards_creations ALTER COLUMN card_uid TYPE VARCHAR(20)"); } catch (_e) {}
 
   // ═══ Refacto V2 — pointages neutres (1 scan = 1 timestamp) ═══
   // Migration one-shot idempotente : l'état 'on_break' n'existe plus en V2,

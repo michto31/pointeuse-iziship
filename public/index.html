@@ -272,17 +272,11 @@ body.borne-mode{overflow:hidden;height:100vh}
 
 .borne-logo-tl{position:absolute;top:24px;left:32px;font-weight:700;color:var(--text2);font-size:18px;letter-spacing:.5px}
 
-.borne-boot-inner{display:flex;flex-direction:column;align-items:center;gap:18px;max-width:520px;text-align:center}
-.borne-boot-title{margin:0;font-size:48px;font-weight:700;color:var(--text)}
-.borne-boot-sub{margin:0;font-size:18px;color:var(--text2);line-height:1.4}
-.borne-boot-meta{margin:8px 0 0;font-size:13px;color:var(--text3);min-height:1.2em}
 .borne-btn-primary{font-size:24px;padding:18px 48px;background:var(--accent);color:#fff;border:none;border-radius:12px;cursor:pointer;font-weight:600;transition:all .15s}
 .borne-btn-primary:hover{background:var(--accent-hover);box-shadow:var(--shadow)}
 
 .borne-idle-prompt{font-size:80px;font-weight:700;color:var(--text);text-align:center;line-height:1.1}
 .borne-clock{font-size:48px;font-family:JetBrains Mono,monospace;color:var(--text2);margin-top:32px;letter-spacing:4px}
-.borne-status-led{position:absolute;bottom:20px;left:24px;font-size:13px;color:var(--text3);font-weight:500}
-.borne-status-led.disconnected{color:var(--red)}
 
 .borne-state-recognized{background:var(--green-light)}
 .borne-success-greet{font-size:96px;font-weight:800;color:var(--green);text-align:center;line-height:1.1}
@@ -897,16 +891,9 @@ Bonjour ! Je suis votre assistant RH. Je peux analyser vos donn&#233;es de point
 <div class="modal" style="max-width:480px;">
 <div class="modal-header">Associer une carte RFID</div>
 <div class="modal-body">
-<div class="rfid-state rfid-state-instructions">
-<p style="margin:0 0 12px;font-size:14px;line-height:1.5;color:var(--text2);">Branchez le lecteur RFID Parallax au Mac via USB, cliquez <strong>Connecter</strong>, puis passez la carte du salari&eacute; devant le lecteur.</p>
-<p style="margin:0;font-size:12px;color:var(--text3);">Compatible Chrome / Edge uniquement. HTTPS requis.</p>
-</div>
-<div class="rfid-state rfid-state-connecting" hidden>
-<p style="text-align:center;color:var(--text2);padding:12px 0;">S&eacute;lection du port s&eacute;rie&hellip;</p>
-</div>
-<div class="rfid-state rfid-state-listening" hidden>
-<p class="rfid-pulse" style="text-align:center;font-size:16px;font-weight:600;color:var(--accent);margin:8px 0;">Passez la carte maintenant</p>
-<p style="text-align:center;font-size:12px;color:var(--text3);margin:8px 0 0;">Le 1er UID lu sera captur&eacute;. Timeout 30s.</p>
+<div class="rfid-state rfid-state-listening">
+<p class="rfid-pulse" style="text-align:center;font-size:16px;font-weight:600;color:var(--accent);margin:8px 0;">Posez la carte sur le lecteur</p>
+<p style="text-align:center;font-size:12px;color:var(--text3);margin:8px 0 0;">Le lecteur Neuftech enverra l&rsquo;UID automatiquement.</p>
 </div>
 <div class="rfid-state rfid-state-captured" hidden>
 <p style="margin:0 0 8px;font-size:13px;color:var(--text2);">UID lu :</p>
@@ -920,12 +907,10 @@ Bonjour ! Je suis votre assistant RH. Je peux analyser vos donn&#233;es de point
 </div>
 </div>
 <div class="modal-footer">
-<button class="btn btn-outline" data-rfid-show="instructions" data-action="rfid-close">Annuler</button>
-<button class="btn btn-primary" data-rfid-show="instructions" data-action="rfid-connect">Connecter le lecteur</button>
 <button class="btn btn-outline" data-rfid-show="listening" data-action="rfid-close">Annuler</button>
-<button class="btn btn-outline" data-rfid-show="captured" data-action="rfid-connect">Recommencer</button>
+<button class="btn btn-outline" data-rfid-show="captured" data-action="rfid-rescan">Recommencer</button>
 <button class="btn btn-primary" data-rfid-show="captured" data-action="rfid-confirm">Confirmer l'association</button>
-<button class="btn btn-primary" data-rfid-show="error" data-action="rfid-connect">R&eacute;essayer</button>
+<button class="btn btn-primary" data-rfid-show="error" data-action="rfid-rescan">R&eacute;essayer</button>
 <button class="btn btn-outline" data-rfid-show="error" data-action="rfid-close">Fermer</button>
 </div>
 </div></div>
@@ -934,21 +919,10 @@ Bonjour ! Je suis votre assistant RH. Je peux analyser vos donn&#233;es de point
 <!-- Affich&eacute;e uniquement si BORNE_MODE d&eacute;tect&eacute; au boot     -->
 <!-- (location.pathname === '/borne' OU ?mode=borne).                  -->
 <section id="borneScreen" class="borne-screen" hidden>
-<div class="borne-state borne-state-boot">
-<div class="borne-logo-tl">IziShip</div>
-<div class="borne-boot-inner">
-<h1 class="borne-boot-title">Borne de pointage</h1>
-<p class="borne-boot-sub">Connectez le lecteur RFID au Mac, puis cliquez ci-dessous.</p>
-<button class="borne-btn-primary" type="button" data-action="borne-start">D&eacute;marrer la borne</button>
-<p class="borne-boot-meta" id="borneBootMeta"></p>
-</div>
-</div>
-
-<div class="borne-state borne-state-idle" hidden>
+<div class="borne-state borne-state-idle">
 <div class="borne-logo-tl">IziShip</div>
 <div class="borne-idle-prompt">Passez votre carte</div>
 <div class="borne-clock" id="borneClock">--:--:--</div>
-<div class="borne-status-led" id="borneStatusLed">&bull;&nbsp;Lecteur connect&eacute;</div>
 </div>
 
 <div class="borne-state borne-state-recognized" hidden>
@@ -960,7 +934,6 @@ Bonjour ! Je suis votre assistant RH. Je peux analyser vos donn&#233;es de point
 <div class="borne-error-icon">&#9888;</div>
 <div class="borne-error-msg" id="borneErrorMsg">Erreur</div>
 <div class="borne-error-sub" id="borneErrorSub"></div>
-<button class="borne-btn-primary" type="button" id="borneRetryBtn" data-action="borne-retry" style="margin-top:24px;display:none;">R&eacute;essayer</button>
 </div>
 
 <div class="borne-state borne-state-misconfig" hidden>
@@ -1022,23 +995,44 @@ var ADMIN_MODE=(location.pathname==='/admin');
 // setInterval(fn, undefined) crée une boucle quasi-infinie (4-10ms),
 // observée en prod = 10000+ requêtes /api/init en 30s. NE PAS redéplacer
 // ces vars en bas — le module borne en fin de script s'en sert directement.
-var BORNE_STATE='boot';
-var bornePort=null;
-var borneReader=null;
+var BORNE_STATE='idle';
 var borneAudioCtx=null;
 var borneLastUid=null;
 var borneLastUidAt=0;
 var borneClockTimer=null;
 var borneHeartbeatTimer=null;
 var borneStateBackTimer=null;
-var borneRfidBuf='';
 var borneInitOnce=false;
-var borneStarting=false;
 // Phase 6 ext — state vars du flux carte intérim partagée
 var borneInterimCardUid=null;
 var borneInterimAgency=null;
 var borneInterimPendingForm=null;
 var borneInterimTimer=null;
+// Phase 6 v2 — lecteur HID Neuftech : buffer clavier + détection Enter.
+// La validation Enter exige (a) longueur 8..20 et (b) span first→last < 500ms
+// (filtre frappe manuelle). Reset auto 2s après le dernier keydown.
+var borneHidBuf='';
+var borneHidFirstAt=0;
+var borneHidLastAt=0;
+var borneHidResetTimer=null;
+var BORNE_HID_MAX_SPAN_MS=500;
+var BORNE_HID_RESET_MS=2000;
+var BORNE_HID_MIN_LEN=8;
+var BORNE_HID_MAX_LEN=20;
+// Mapping AZERTY → chiffres : si le Mac borne reste en clavier FR (oubli ABC),
+// le scanner émet les chars de la rangée numérique sans Shift. On reconvertit.
+var AZERTY_TO_DIGIT={
+  '\u00e0':'0','a':'0',
+  '&':'1',
+  '\u00e9':'2',
+  '"':'3',
+  '\u0027':'4',
+  '(':'5',
+  '-':'6',
+  '\u00e8':'7',
+  '_':'8',
+  '\u00e7':'9'
+};
 var BORNE_INTERIM_TIMEOUT_MS=30000;
 var RFID_DEDUP_MS=2000;
 var BORNE_RECOGNIZED_MS=3000;
@@ -1589,15 +1583,19 @@ async function resetWorkerPin(id){
   }catch(e){toast('Erreur: '+e.message,'error');}
 }
 
-// ═══ RFID — enrôlement / dissociation depuis fiche worker (Phase 6) ═══
-// Le sous-modal #rfidAssocModal a 6 états gérés via .rfid-state-* + [data-rfid-show]
-// instructions → connecting → listening → captured → submitting (succès) / error
+// ═══ RFID — enrôlement / dissociation depuis fiche worker (Phase 6 v2) ═══
+// V2 HID Neuftech : le sous-modal #rfidAssocModal a 4 états — listening (par
+// défaut à l'ouverture) → captured → submitting (succès) / error. Le scan
+// HID est capté via un listener keydown document attaché tant que le modal
+// est ouvert (capture phase + preventDefault pour ne pas polluer les inputs
+// de la modale Modifier worker visible en arrière-plan).
 var rfidWorkerId=null;
-var rfidPort=null;
-var rfidReader=null;
-var rfidTimeout=null;
-var rfidBuf='';
 var rfidCapturedUid=null;
+var rfidHidBuf='';
+var rfidHidFirstAt=0;
+var rfidHidLastAt=0;
+var rfidHidResetTimer=null;
+var rfidHidActive=false;
 
 function rfidSetState(s){
   var modal=document.getElementById('rfidAssocModal');
@@ -1617,89 +1615,94 @@ function rfidSetError(msg){
   rfidSetState('error');
 }
 
+function rfidHidResetBuf(){
+  rfidHidBuf='';
+  rfidHidFirstAt=0;
+  rfidHidLastAt=0;
+  if(rfidHidResetTimer){clearTimeout(rfidHidResetTimer);rfidHidResetTimer=null;}
+}
+
+function rfidHidArmReset(){
+  if(rfidHidResetTimer)clearTimeout(rfidHidResetTimer);
+  rfidHidResetTimer=setTimeout(rfidHidResetBuf,BORNE_HID_RESET_MS);
+}
+
+// Handler keydown capture-phase : tant que la modale écoute, on absorbe les
+// touches (preventDefault) pour ne pas faire fuiter le scan vers les inputs
+// de la modale "Modifier worker" qui reste visible en arrière-plan.
+function rfidHidKeyHandler(e){
+  if(!rfidHidActive)return;
+  var k=e.key;
+  if(k==='Enter'){
+    e.preventDefault();
+    if(rfidHidBuf.length>=BORNE_HID_MIN_LEN && rfidHidBuf.length<=BORNE_HID_MAX_LEN){
+      var span=rfidHidLastAt-rfidHidFirstAt;
+      if(span<BORNE_HID_MAX_SPAN_MS){
+        rfidCapturedUid=rfidHidBuf;
+        rfidHidResetBuf();
+        var disp=document.getElementById('rfidCapturedUid');
+        if(disp)disp.textContent=rfidCapturedUid;
+        rfidSetState('captured');
+        return;
+      }
+    }
+    rfidHidResetBuf();
+    return;
+  }
+  var ch=null;
+  if(k && k.length===1 && k>='0' && k<='9')ch=k;
+  else if(k && AZERTY_TO_DIGIT[k])ch=AZERTY_TO_DIGIT[k];
+  if(ch===null)return;
+  e.preventDefault();
+  var now=Date.now();
+  if(rfidHidBuf.length===0)rfidHidFirstAt=now;
+  rfidHidLastAt=now;
+  rfidHidBuf+=ch;
+  if(rfidHidBuf.length>BORNE_HID_MAX_LEN)rfidHidBuf=rfidHidBuf.substring(rfidHidBuf.length-BORNE_HID_MAX_LEN);
+  rfidHidArmReset();
+}
+
+function rfidHidStartListening(){
+  rfidHidResetBuf();
+  if(!rfidHidActive){
+    rfidHidActive=true;
+    document.addEventListener('keydown',rfidHidKeyHandler,true);
+  }
+}
+
+function rfidHidStopListening(){
+  if(rfidHidActive){
+    rfidHidActive=false;
+    document.removeEventListener('keydown',rfidHidKeyHandler,true);
+  }
+  rfidHidResetBuf();
+}
+
 function openRfidAssoc(workerId){
   rfidWorkerId=parseInt(workerId,10);
   if(isNaN(rfidWorkerId))return;
   rfidCapturedUid=null;
-  rfidBuf='';
   var disp=document.getElementById('rfidCapturedUid');
   if(disp)disp.textContent='—';
-  rfidSetState('instructions');
+  rfidSetState('listening');
   document.getElementById('rfidAssocModal').classList.add('open');
+  rfidHidStartListening();
 }
 
-async function closeRfidAssoc(){
-  await rfidCleanupRead();
+function closeRfidAssoc(){
+  rfidHidStopListening();
   document.getElementById('rfidAssocModal').classList.remove('open');
   rfidWorkerId=null;
   rfidCapturedUid=null;
 }
 
-async function rfidConnect(){
-  rfidSetState('connecting');
-  if(!navigator.serial){rfidSetError('Web Serial non support\u00e9. Utilisez Chrome ou Edge.');return;}
-  await rfidCleanupRead();
-  try{
-    rfidPort=await navigator.serial.requestPort();
-  }catch(e){
-    if(e && e.name==='NotFoundError'){rfidSetError('Aucun port s\u00e9lectionn\u00e9.');return;}
-    if(e && e.name==='SecurityError'){rfidSetError('HTTPS requis pour Web Serial.');return;}
-    rfidSetError('Erreur acc\u00e8s port : '+(e.message||e.name||'inconnue'));
-    return;
-  }
-  try{
-    await rfidPort.open({baudRate:2400,dataBits:8,stopBits:1,parity:'none'});
-    await rfidPort.setSignals({dataTerminalReady:true});
-  }catch(e){
-    rfidSetError('Erreur ouverture port : '+(e.message||'inconnue'));
-    try{await rfidPort.close();}catch(_e){}
-    rfidPort=null;
-    return;
-  }
+// "Recommencer" / "Réessayer" : revient à listening et ré-arme le buffer.
+function rfidRescan(){
+  rfidCapturedUid=null;
+  var disp=document.getElementById('rfidCapturedUid');
+  if(disp)disp.textContent='—';
   rfidSetState('listening');
-  rfidStartReadLoop();
-}
-
-function rfidStartReadLoop(){
-  if(!rfidPort || !rfidPort.readable){rfidSetError('Port non lisible.');return;}
-  rfidBuf='';
-  rfidReader=rfidPort.readable.getReader();
-  rfidTimeout=setTimeout(function(){
-    rfidAbortRead('Aucune carte d\u00e9tect\u00e9e en 30s. V\u00e9rifiez le lecteur et la carte.');
-  },30000);
-  (async function(){
-    var dec=new TextDecoder('ascii');
-    try{
-      while(true){
-        var r=await rfidReader.read();
-        if(r.done)break;
-        rfidBuf+=dec.decode(r.value);
-        var m=rfidBuf.match(/\n([0-9A-F]{10})\r/);
-        if(m){
-          rfidCapturedUid=m[1];
-          await rfidCleanupRead();
-          var disp=document.getElementById('rfidCapturedUid');
-          if(disp)disp.textContent=rfidCapturedUid;
-          rfidSetState('captured');
-          return;
-        }
-      }
-    }catch(e){
-      // Reader cancelled normalement par cleanup, on ignore.
-    }
-  })();
-}
-
-async function rfidAbortRead(msg){
-  await rfidCleanupRead();
-  rfidSetError(msg);
-}
-
-async function rfidCleanupRead(){
-  if(rfidTimeout){clearTimeout(rfidTimeout);rfidTimeout=null;}
-  if(rfidReader){try{await rfidReader.cancel();}catch(e){}try{rfidReader.releaseLock();}catch(e){}rfidReader=null;}
-  if(rfidPort){try{await rfidPort.close();}catch(e){}rfidPort=null;}
-  rfidBuf='';
+  rfidHidStartListening();
 }
 
 async function rfidConfirm(){
@@ -1707,6 +1710,7 @@ async function rfidConfirm(){
   var wid=rfidWorkerId;
   var uid=rfidCapturedUid;
   rfidSetState('submitting');
+  rfidHidStopListening();
   try{
     await apiPost('workers/'+wid+'/rfid',{uid:uid});
     toast('Carte associ\u00e9e');
@@ -3743,19 +3747,18 @@ document.getElementById('rfidAssocModal').addEventListener('click',function(e){
   if(!b)return;
   var act=b.getAttribute('data-action');
   if(act==='rfid-close')closeRfidAssoc();
-  else if(act==='rfid-connect')rfidConnect();
+  else if(act==='rfid-rescan')rfidRescan();
   else if(act==='rfid-confirm')rfidConfirm();
 });
 
-// ═══ BORNE RFID — module plein écran (Phase 6 étape 3) ═══
+// ═══ BORNE RFID — module plein écran (Phase 6 v2 — HID Neuftech) ═══
 // Activé uniquement si BORNE_MODE === true (cf détection top-of-script).
-// Cycle : boot → idle → recognized → idle (ou error → idle).
-// Constantes et state vars hoist-safe en tête du script (cf bloc
-// // ═══ BORNE — constantes hoist-safe ═══ vers le début).
-// Persistance Web Serial : navigator.serial.getPorts() permet d'auto-rouvrir
-// le port si l'admin a déjà autorisé une fois. AudioContext requiert un
-// user-gesture initial (clic "Démarrer") — donc même avec port persisté on
-// affiche le boot screen au premier chargement de la session.
+// Cycle : idle → recognized → idle (ou error → idle).
+// V2 — Le lecteur Neuftech est un HID clavier : il "tape" l'UID (10 chiffres
+// décimaux) puis Enter. On bufferise les keydowns au niveau document et on
+// déclenche la validation sur Enter. Plus de Web Serial, plus de bouton
+// "Démarrer", plus de port à autoriser. AudioContext + WakeLock sont
+// initialisés lazy sur le 1er keydown utile (lui-même = user gesture).
 
 function borneStationToken(){
   return new URLSearchParams(location.search).get('station_token')||'';
@@ -3768,191 +3771,61 @@ function initBorne(){
     borneShowState('misconfig');
     return;
   }
-  borneShowState('boot');
+  borneShowState('idle');
   borneStartClock();
   borneStartHeartbeat();
-  // Listeners disconnect/connect — le navigateur émet ces events sur navigator.serial
-  if(navigator.serial){
-    navigator.serial.addEventListener('disconnect',borneOnDisconnect);
-    navigator.serial.addEventListener('connect',borneOnReconnect);
-  }
-  // Tente une auto-start si un port est déjà autorisé. Mais on garde le boot
-  // screen visible : le bouton "Démarrer" reste obligatoire pour user-gesture
-  // (AudioContext + parfois reopen sur certains OS).
-  borneCheckSavedPort();
+  document.addEventListener('keydown',borneHidKeyHandler);
 }
 
-async function borneCheckSavedPort(){
-  if(!navigator.serial)return;
-  try{
-    var ports=await navigator.serial.getPorts();
-    var meta=document.getElementById('borneBootMeta');
-    if(ports && ports.length>0){
-      if(meta)meta.textContent='Lecteur d\u00e9j\u00e0 autoris\u00e9 \u2014 cliquez D\u00e9marrer pour relancer la session.';
-    }else{
-      if(meta)meta.textContent='Aucun lecteur autoris\u00e9. Premi\u00e8re utilisation : Chrome demandera la permission.';
-    }
-  }catch(e){}
+// Reset du buffer HID + horloges + timer
+function borneHidReset(){
+  borneHidBuf='';
+  borneHidFirstAt=0;
+  borneHidLastAt=0;
+  if(borneHidResetTimer){clearTimeout(borneHidResetTimer);borneHidResetTimer=null;}
 }
 
-async function borneStart(){
-  if(borneStarting)return;
-  borneStarting=true;
-  try{
-    if(!navigator.serial){
-      borneShowError('Web Serial non support\u00e9','Utilisez Chrome ou Edge.','port_recoverable');
-      return;
-    }
-    borneEnsureAudio();
-    borneAcquireWakeLock();
-    // 1) Tente getPorts() pour port persisté ; sinon requestPort() avec picker.
-    var port=null;
-    try{
-      var saved=await navigator.serial.getPorts();
-      if(saved && saved.length>0){
-        port=saved[0];
-      }else{
-        port=await navigator.serial.requestPort();
-      }
-    }catch(e){
-      if(e && e.name==='NotFoundError'){
-        borneShowError('Aucun port s\u00e9lectionn\u00e9','Cliquez R\u00e9essayer puis choisissez le lecteur.','port_recoverable');
+// Re-arme le timeout de reset (2s après le dernier keydown valide). Évite
+// qu'un buffer partiel (frappe parasite, scan interrompu) reste indéfiniment.
+function borneHidArmReset(){
+  if(borneHidResetTimer)clearTimeout(borneHidResetTimer);
+  borneHidResetTimer=setTimeout(borneHidReset,BORNE_HID_RESET_MS);
+}
+
+// Listener clavier global. Ignoré si l'utilisateur tape dans un input/textarea
+// (formulaire intérim) — un scanner ne s'utilise pas pendant la saisie d'un
+// formulaire. Sur les autres écrans (idle, picker, etc.) tous les keydowns
+// sont absorbés. La validation Enter exige longueur 8..20 ET span first→last
+// < 500ms pour distinguer un scan d'une frappe humaine.
+function borneHidKeyHandler(e){
+  if(e.target && (e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'))return;
+  var k=e.key;
+  if(k==='Enter'){
+    if(borneHidBuf.length>=BORNE_HID_MIN_LEN && borneHidBuf.length<=BORNE_HID_MAX_LEN){
+      var span=borneHidLastAt-borneHidFirstAt;
+      if(span<BORNE_HID_MAX_SPAN_MS){
+        var uid=borneHidBuf;
+        borneHidReset();
+        borneEnsureAudio();
+        borneAcquireWakeLock();
+        borneHandleUid(uid);
         return;
       }
-      if(e && e.name==='SecurityError'){
-        borneShowError('HTTPS requis','La borne doit \u00eatre servie sur https://','port_recoverable');
-        return;
-      }
-      borneShowError('Erreur acc\u00e8s port',e.message||e.name||'inconnue','port_recoverable');
-      return;
     }
-    await borneOpenPort(port);
-  }finally{
-    borneStarting=false;
+    borneHidReset();
+    return;
   }
-}
-
-async function borneOpenPort(port){
-  // Idempotence : si on tient déjà CE port avec un reader actif, no-op (afficher idle).
-  // Si on tient un autre port (ou ce port sans reader), on ferme proprement avant reopen.
-  if(bornePort){
-    if(bornePort===port && borneReader){
-      borneSetStatusLed(true);
-      borneShowState('idle');
-      return;
-    }
-    await borneClosePort();
-  }
-  try{
-    await port.open({baudRate:2400,dataBits:8,stopBits:1,parity:'none'});
-  }catch(e){
-    if(e && e.name==='InvalidStateError'){
-      // Port marqué ouvert côté Chrome mais notre ref est perdue (reload race).
-      // On tente 1 close + 1 retry. Si ça rate à nouveau → message friendly.
-      try{await port.close();}catch(_e){}
-      try{
-        await port.open({baudRate:2400,dataBits:8,stopBits:1,parity:'none'});
-      }catch(e2){
-        borneShowError('Lecteur occup\u00e9','D\u00e9branchez et rebranchez le lecteur, puis r\u00e9essayez.','port_recoverable');
-        return;
-      }
-    }else if(/open serial port/i.test(String((e && e.message)||''))){
-      borneShowError('Lecteur occup\u00e9','D\u00e9branchez et rebranchez le lecteur, puis r\u00e9essayez.','port_recoverable');
-      return;
-    }else{
-      borneShowError('Erreur ouverture port',(e && e.message)||'inconnue','port_recoverable');
-      return;
-    }
-  }
-  // setSignals hors du catch : DTR=True doit toujours être appliqué quand le port est ouvert,
-  // y compris dans le path InvalidStateError-then-close-and-retry.
-  try{await port.setSignals({dataTerminalReady:true});}catch(e){/* DTR best-effort */}
-  bornePort=port;
-  borneSetStatusLed(true);
-  borneShowState('idle');
-  borneStartReadLoop();
-}
-
-function borneStartReadLoop(){
-  if(!bornePort || !bornePort.readable)return;
-  borneRfidBuf='';
-  try{borneReader=bornePort.readable.getReader();}
-  catch(e){borneShowError('Lecteur occup\u00e9','D\u00e9branchez et rebranchez le lecteur, puis r\u00e9essayez.','port_recoverable');return;}
-  (async function(){
-    var dec=new TextDecoder('ascii');
-    try{
-      while(true){
-        var r=await borneReader.read();
-        if(r.done)break;
-        borneRfidBuf+=dec.decode(r.value);
-        // Plusieurs trames possibles dans le buffer si lecture rapide
-        var m;
-        while((m=borneRfidBuf.match(/\n([0-9A-F]{10})\r/))!==null){
-          borneRfidBuf=borneRfidBuf.substring(m.index+m[0].length);
-          borneHandleUid(m[1]);
-        }
-        // Limite buffer pour ne pas accumuler indéfiniment des bytes parasites
-        if(borneRfidBuf.length>256)borneRfidBuf=borneRfidBuf.substring(borneRfidBuf.length-32);
-      }
-    }catch(e){
-      // Reader cancelled (déconnexion ou cleanup) — silencieux
-    }
-  })();
-}
-
-// Cleanup propre : cancel reader + releaseLock + close port + null toutes les refs.
-// Remplace l'ancien borneStopReadLoop qui ne fermait pas le port (cause des handles
-// accumulés observés via lsof).
-async function borneClosePort(){
-  if(borneReader){
-    try{await borneReader.cancel();}catch(e){}
-    try{borneReader.releaseLock();}catch(e){}
-    borneReader=null;
-  }
-  if(bornePort){
-    try{await bornePort.close();}catch(e){}
-    bornePort=null;
-  }
-  borneRfidBuf='';
-}
-
-async function borneOnDisconnect(e){
-  if(e && e.target===bornePort){
-    await borneClosePort();
-    borneSetStatusLed(false);
-    borneShowError('Lecteur d\u00e9connect\u00e9','Rebranchez l\'USB pour reprendre. Reprise auto au branchement.','port_disconnected');
-  }
-}
-
-async function borneOnReconnect(e){
-  // Si on est en error parce que déconnecté, on tente de réutiliser le port persisté
-  if(BORNE_STATE==='error' && bornePort===null){
-    try{
-      var ports=await navigator.serial.getPorts();
-      if(ports && ports.length>0){
-        await borneOpenPort(ports[0]);
-      }
-    }catch(err){}
-  }
-}
-
-async function borneRetry(){
-  // Reset complet du port avant nouveau start. Pas de showState('boot')
-  // intermédiaire — borneStart enchaîne directement vers idle (ou re-error).
-  await borneClosePort();
-  await borneStart();
-}
-
-function borneSetStatusLed(connected){
-  var led=document.getElementById('borneStatusLed');
-  if(!led)return;
-  if(connected){
-    led.textContent='\u2022\u00a0Lecteur connect\u00e9';
-    led.classList.remove('disconnected');
-  }else{
-    led.textContent='\u26a0\u00a0Lecteur d\u00e9connect\u00e9';
-    led.classList.add('disconnected');
-  }
+  var ch=null;
+  if(k && k.length===1 && k>='0' && k<='9')ch=k;
+  else if(k && AZERTY_TO_DIGIT[k])ch=AZERTY_TO_DIGIT[k];
+  if(ch===null)return;
+  var now=Date.now();
+  if(borneHidBuf.length===0)borneHidFirstAt=now;
+  borneHidLastAt=now;
+  borneHidBuf+=ch;
+  // Cap pathologique : on garde au max MAX_LEN derniers chars
+  if(borneHidBuf.length>BORNE_HID_MAX_LEN)borneHidBuf=borneHidBuf.substring(borneHidBuf.length-BORNE_HID_MAX_LEN);
+  borneHidArmReset();
 }
 
 async function borneHandleUid(uid){
@@ -4098,22 +3971,19 @@ function borneShowError(msg,sub,errorKind){
   if(el)el.textContent=msg||'Erreur';
   var es=document.getElementById('borneErrorSub');
   if(es)es.textContent=sub||'';
-  var btn=document.getElementById('borneRetryBtn');
-  if(btn)btn.style.display=(errorKind==='port_recoverable')?'inline-flex':'none';
   borneShowState('error');
-  // Cancel any prior auto-back timer (e.g. transient sur transient rapide)
+  // Cancel any prior auto-back timer (e.g. transient sur transient rapide).
+  // V2 HID — pas de bouton Réessayer (plus de port à reconnecter), tous les
+  // cas reviennent à idle après BORNE_ERROR_MS. errorKind est conservé pour
+  // signature mais ignoré côté UI.
   if(borneStateBackTimer){clearTimeout(borneStateBackTimer);borneStateBackTimer=null;}
-  if(errorKind==='transient'){
-    borneStateBackTimer=setTimeout(function(){borneShowState('idle');},BORNE_ERROR_MS);
-  }
+  borneStateBackTimer=setTimeout(function(){borneShowState('idle');},BORNE_ERROR_MS);
 }
 
 function borneBackTo(state,delayMs){
   if(borneStateBackTimer)clearTimeout(borneStateBackTimer);
   borneStateBackTimer=setTimeout(function(){
-    // Si on est passé à un autre état entre-temps, ne rien faire
     if(state==='idle')borneShowState('idle');
-    else if(state==='boot')borneShowState('boot');
   },delayMs||BORNE_RECOGNIZED_MS);
 }
 
@@ -4638,16 +4508,14 @@ async function syncPollTick(){
 }
 
 
-// Event delegation pour les boutons borne-start (boot), borne-retry (error)
-// et tous les boutons des écrans intérim partagés.
+// Event delegation pour les boutons des écrans intérim partagés.
+// V2 HID — plus de borne-start ni borne-retry (Web Serial supprimé).
 if(document.getElementById('borneScreen')){
   document.getElementById('borneScreen').addEventListener('click',function(e){
     var b=e.target.closest('button[data-action]');
     if(!b)return;
     var act=b.getAttribute('data-action');
-    if(act==='borne-start')borneStart();
-    else if(act==='borne-retry')borneRetry();
-    else if(act==='borne-interim-cancel')borneInterimCancel();
+    if(act==='borne-interim-cancel')borneInterimCancel();
     else if(act==='borne-interim-pick-agency')borneInterimPickAgency(b.getAttribute('data-agency')||'');
     else if(act==='borne-interim-pick-worker')borneInterimPickWorker(b.getAttribute('data-worker-id'));
     else if(act==='borne-interim-new')borneShowCreateForm();
