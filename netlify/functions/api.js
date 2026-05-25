@@ -1231,6 +1231,24 @@ exports.handler = async function (event) {
       return await rh.handle(event, body, sql);
     }
 
+    // ═══ Rapport admin V2 (plages de dates, filtres, export agence) ═══════
+    // GET /api/reports/data        — agrégats workers + totaux + agencies
+    // GET /api/reports/export/xlsx — XLSX (sheet par agence si group_by_agency)
+    // GET /api/reports/export/pdf  — PDF (section par agence si group_by_agency)
+    // Module dédié : ./rh/reports.js (réutilise hhmmToMin + breakMinutesClosed).
+    if (method === "GET" && path === "reports/data") {
+      await requireAuth(event, "admin");
+      return await require("./rh/reports").handleData(event, qs, sql);
+    }
+    if (method === "GET" && path === "reports/export/xlsx") {
+      await requireAuth(event, "admin");
+      return await require("./rh/reports").handleXlsx(event, qs, sql);
+    }
+    if (method === "GET" && path === "reports/export/pdf") {
+      await requireAuth(event, "admin");
+      return await require("./rh/reports").handlePdf(event, qs, sql);
+    }
+
     return err("Route: " + path, 404);
   } catch (e) {
     if (e && e.status) return json({ error: e.message }, e.status);

@@ -255,6 +255,30 @@ body.borne-mode{overflow:hidden;height:100vh}
 .admin-pending-actions{display:flex;gap:6px;flex-shrink:0}
 .admin-pending-empty{text-align:center;color:var(--text3);padding:24px;font-style:italic}
 
+/* ═══ Rapport V2 — panel filtres + totaux ═══ */
+.rpt-panel{background:var(--white);border:1px solid var(--border-light);border-radius:10px;padding:14px 16px;margin-bottom:16px;display:flex;flex-direction:column;gap:10px}
+.rpt-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.rpt-row-actions{padding-top:4px;border-top:1px dashed var(--border-light);margin-top:2px}
+.rpt-presets{display:inline-flex;background:#f3f4f6;border-radius:10px;padding:3px;gap:2px}
+.rpt-preset{background:transparent;border:none;font-family:inherit;font-size:13px;font-weight:600;color:#6b7280;padding:7px 14px;border-radius:7px;cursor:pointer;transition:all .15s;white-space:nowrap}
+.rpt-preset.active{background:var(--accent);color:#fff;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.rpt-preset:not(.active):hover{color:#111827}
+.rpt-range{display:inline-flex;gap:10px;align-items:center;font-size:12px;color:var(--text2)}
+.rpt-range label{display:inline-flex;align-items:center;gap:6px}
+.rpt-range input{width:auto}
+.rpt-row-actions .btn{font-size:12px}
+.rpt-status{font-size:12px;color:var(--text3);font-style:italic}
+.rpt-status.error{color:var(--red);font-weight:600;font-style:normal}
+.rpt-totals{background:var(--accent-light);border:1px solid #cfe0fb;border-radius:8px;padding:12px 16px;margin-bottom:14px;font-size:14px;color:var(--text);display:flex;flex-wrap:wrap;gap:18px;align-items:center}
+.rpt-totals strong{font-family:JetBrains Mono,monospace;color:var(--accent)}
+.rpt-totals-empty{text-align:center;color:var(--text3);padding:32px;font-style:italic;background:var(--bg);border-radius:8px}
+.rpt-worker-row{cursor:pointer}
+.rpt-worker-row:hover{background:var(--bg)}
+.rpt-detail-table{width:100%;border-collapse:collapse;font-size:13px}
+.rpt-detail-table th,.rpt-detail-table td{padding:6px 10px;border-bottom:1px solid var(--border-light);text-align:left}
+.rpt-detail-table th{background:var(--bg);font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--text3)}
+.rpt-detail-table td.num{font-family:JetBrains Mono,monospace;font-size:12px}
+
 /* ═══ Gestion cartes — tabs + status pills ═══ */
 .mgmt-tabs{display:flex;gap:2px;border-bottom:1px solid var(--border-light);margin-bottom:18px}
 .mgmt-tab{background:none;border:none;padding:10px 18px;font-family:inherit;font-size:14px;font-weight:600;color:var(--text2);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s}
@@ -456,17 +480,57 @@ body.borne-mode{overflow:hidden;height:100vh}
 </div>
 </div>
 
-<!-- RAPPORT -->
+<!-- RAPPORT V2 — plages dates + filtres + export par agence -->
 <div class="page" id="page-rapport">
-<div class="controls-row">
-<input type="date" class="form-control" style="width:auto;" id="rapportDate" onchange="renderRapport()">
-<select class="form-control" style="width:auto;" id="rapportWorker" onchange="renderRapport()"><option value="all">Tous les salari&#233;s</option></select>
-<button class="btn btn-outline btn-sm" onclick="exportCSV()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Exporter CSV</button>
+<div class="rpt-panel">
+<div class="rpt-row">
+<div class="rpt-presets" id="rptPresets">
+<button class="rpt-preset" type="button" data-rpt-preset="today">Aujourd&#39;hui</button>
+<button class="rpt-preset" type="button" data-rpt-preset="week">Cette semaine</button>
+<button class="rpt-preset active" type="button" data-rpt-preset="month">Ce mois</button>
+<button class="rpt-preset" type="button" data-rpt-preset="lastmonth">Mois dernier</button>
+<button class="rpt-preset" type="button" data-rpt-preset="custom">Personnalis&eacute;</button>
 </div>
-<div class="stat-row" id="statCards"></div>
-<div class="card"><div class="card-header"><div class="card-title">D&#233;tail des pointages</div></div>
-<div class="table-wrap"><table><thead><tr><th>Salari&#233;</th><th>Arriv&#233;e</th><th>D&#233;part</th><th>Pauses</th><th>Temps pause</th><th>Temps travaill&#233;</th><th>Actions</th></tr></thead><tbody id="rapportTableBody"></tbody></table></div></div>
+<div class="rpt-range" id="rptRange">
+<label>Du <input type="date" class="form-control" id="rptStart"></label>
+<label>au <input type="date" class="form-control" id="rptEnd"></label>
 </div>
+</div>
+<div class="rpt-row">
+<select class="form-control" id="rptType" style="width:auto;">
+<option value="all">Tous les types</option>
+<option value="cdi">CDI</option>
+<option value="cdd">CDD</option>
+<option value="interim">Int&eacute;rim</option>
+</select>
+<select class="form-control" id="rptAgency" style="width:auto;">
+<option value="">Toutes les agences</option>
+</select>
+<select class="form-control" id="rptWorker" style="width:auto;">
+<option value="">Tous les workers</option>
+</select>
+<button class="btn btn-outline btn-sm" type="button" data-action="rpt-refresh">Actualiser</button>
+</div>
+<div class="rpt-row rpt-row-actions">
+<button class="btn btn-outline btn-sm" type="button" data-action="rpt-xlsx-agency">Exporter Excel par agence</button>
+<button class="btn btn-outline btn-sm" type="button" data-action="rpt-pdf-agency">Exporter PDF par agence</button>
+<button class="btn btn-outline btn-sm" type="button" data-action="rpt-xlsx-all">Export tout en Excel</button>
+<button class="btn btn-outline btn-sm" type="button" data-action="rpt-pdf-all">Export tout en PDF</button>
+<span class="rpt-status" id="rptStatus"></span>
+</div>
+</div>
+<div class="rpt-totals" id="rptTotals" hidden></div>
+<div class="card"><div class="card-header"><div class="card-title">D&eacute;tail par worker</div></div>
+<div class="table-wrap"><table><thead><tr><th>Worker</th><th>Type</th><th>Agence</th><th>Brut</th><th>Pauses</th><th>Net</th><th>Pointages</th></tr></thead><tbody id="rptTableBody"><tr><td colspan="7" style="text-align:center;color:var(--text3);padding:32px;">Chargement&hellip;</td></tr></tbody></table></div></div>
+</div>
+
+<!-- MODAL DÉTAIL WORKER (rapport jour par jour) -->
+<div class="modal-overlay" id="rptDetailModal">
+<div class="modal" style="max-width:780px;">
+<div class="modal-header" id="rptDetailTitle">D&eacute;tail</div>
+<div class="modal-body" id="rptDetailBody"></div>
+<div class="modal-footer"><button class="btn btn-outline" type="button" data-action="rpt-detail-close">Fermer</button></div>
+</div></div>
 
 <!-- HISTORIQUE -->
 <div class="page" id="page-historique">
@@ -1232,7 +1296,7 @@ document.querySelectorAll('.nav-item[data-page]').forEach(function(b){
     document.getElementById('page-'+b.dataset.page).classList.add('active');
     document.getElementById('pageTitle').textContent=pT[b.dataset.page]||'';
     if(b.dataset.page==='salaries')renderWorkersTable();
-    if(b.dataset.page==='rapport')renderRapport();
+    if(b.dataset.page==='rapport')enterRapportPage();
     if(b.dataset.page==='historique')renderHistorique();
     if(b.dataset.page==='stations')loadStations();
     if(b.dataset.page==='security-events')enterSecurityEventsPage();
@@ -1245,22 +1309,22 @@ document.querySelectorAll('.nav-item[data-page]').forEach(function(b){
 function toast(m,t){t=t||'success';var e=document.createElement('div');e.className='toast toast-'+t;var i=t==='success'?'\u2713':t==='error'?'\u2717':'\u26A0';e.innerHTML='<span>'+i+'</span> '+m;document.getElementById('toastContainer').appendChild(e);setTimeout(function(){e.remove();},3000);}
 
 function refreshSel(){
-  var w=lW(),s=document.getElementById('selWorker'),r=document.getElementById('rapportWorker');
+  // V2 rapport : #rapportWorker n'existe plus, on ne peuple que le select
+  // admin Pointage (#selWorker). Le filtre worker du rapport vit sur
+  // #rptWorker, mis à jour par rptPopulateFilters().
+  var w=lW(),s=document.getElementById('selWorker');
+  if(!s)return;
   var tmL={interim:'Int\u00e9rimaires',cdi:'CDI',cdd:'CDD'};
   var groups={interim:[],cdi:[],cdd:[]};
   w.forEach(function(x){var g=groups[x.type]||groups.interim;g.push(x);});
   s.innerHTML='<option value="">\u2014 S\u00e9lectionner \u2014</option>';
-  r.innerHTML='<option value="all">Tous</option><option value="type:interim">Tous les int\u00e9rimaires</option><option value="type:cdi">Tous les CDI</option><option value="type:cdd">Tous les CDD</option>';
   ['interim','cdi','cdd'].forEach(function(t){
     if(!groups[t].length)return;
     s.innerHTML+='<optgroup label="'+tmL[t]+'">';
-    r.innerHTML+='<optgroup label="'+tmL[t]+'">';
     groups[t].forEach(function(x){
       s.innerHTML+='<option value="'+x.id+'">'+x.name+(x.agency?' ('+x.agency+')':'')+'</option>';
-      r.innerHTML+='<option value="'+x.id+'">'+x.name+'</option>';
     });
     s.innerHTML+='</optgroup>';
-    r.innerHTML+='</optgroup>';
   });
   // V2 admin — refresh visibilité/couleur du bouton Pointer après repop du select.
   if(typeof updateAdminPunchButton==='function')updateAdminPunchButton();
@@ -1704,13 +1768,20 @@ async function saveEdit(){
   if(!arr){toast('L\u2019heure d\u2019arriv\u00e9e est obligatoire','error');return;}
   try{
     await apiUpdateRecord(editingRecId,{arrival:arr,departure:dep||null,breaks:editBreaks.filter(function(b){return b.start;})});
-    closeEditModal();toast('Pointage modifi\u00e9');renderLiveList();renderRapport();
+    closeEditModal();toast('Pointage modifi\u00e9');renderLiveList();rptRefreshIfActive();
   }catch(e){toast('Erreur: '+e.message,'error');}
 }
 async function deleteRecord(){
   if(!editingRecId)return;
   if(!confirm('Supprimer ce pointage ?'))return;
-  try{await apiDeleteRecord(editingRecId);closeEditModal();toast('Pointage supprim\u00e9');renderLiveList();renderRapport();}catch(e){toast('Erreur: '+e.message,'error');}
+  try{await apiDeleteRecord(editingRecId);closeEditModal();toast('Pointage supprim\u00e9');renderLiveList();rptRefreshIfActive();}catch(e){toast('Erreur: '+e.message,'error');}
+}
+
+// Recharge la page Rapport seulement si elle est ouverte (\u00e9vite un appel
+// /api/reports/data inutile depuis la page Pointage).
+function rptRefreshIfActive(){
+  var p=document.getElementById('page-rapport');
+  if(p && p.classList.contains('active') && typeof rptLoad==='function')rptLoad();
 }
 
 var aC=['#2B7FFF','#10B981','#F59E0B','#EF4444','#8B5CF6','#06B6D4','#EC4899','#F97316'];
@@ -1810,55 +1881,303 @@ function filterRecsBySelection(recs,wId){
 function getWorkerType(workerId){var w=lW().find(function(x){return x.id===workerId;});return w?w.type:'interim';}
 var typeBadgeHtml=function(t){var tm={interim:'Int\u00e9rim',cdi:'CDI',cdd:'CDD'};var bm={interim:'badge-interim',cdi:'badge-cdi',cdd:'badge-cdd'};return '<span class="badge '+(bm[t]||'badge-interim')+'" style="font-size:9px;margin-left:4px;">'+(tm[t]||t)+'</span>';};
 
-function renderRapport(){
-  var date=document.getElementById('rapportDate').value||tS();
-  var wId=document.getElementById('rapportWorker').value;
-  var allRecs=lR().filter(function(r){return r.date===date;});
-  var f=filterRecsBySelection(allRecs,wId);
-  // Count by type
-  var countInt=0,countCdi=0,countCdd=0;
-  f.forEach(function(r){var t=getWorkerType(r.workerId);if(t==='interim')countInt++;else if(t==='cdi')countCdi++;else countCdd++;});
-  var tw=0,tb=0,tp=f.length;f.forEach(function(r){tw+=cWM(r);tb+=cBM(r);});
-  var typeBreakdown='';
-  if(wId==='all')typeBreakdown='<span style="font-size:11px;color:var(--text2);display:block;margin-top:2px;">'+countInt+' int\u00e9rim \u00b7 '+countCdi+' CDI'+(countCdd?' \u00b7 '+countCdd+' CDD':'')+'</span>';
-  document.getElementById('statCards').innerHTML=
-    '<div class="stat-card"><div class="stat-card-icon" style="background:var(--green-light);color:var(--green);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div><div class="stat-value" style="color:var(--green);">'+tp+'</div><div class="stat-label">Pr\u00e9sents</div>'+typeBreakdown+'</div>'+
-    '<div class="stat-card"><div class="stat-card-icon" style="background:var(--accent-light);color:var(--accent);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div><div class="stat-value" style="color:var(--accent);">'+mHM(tw)+'</div><div class="stat-label">Heures travaill\u00e9es</div></div>'+
-    '<div class="stat-card"><div class="stat-card-icon" style="background:var(--orange-light);color:var(--orange);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg></div><div class="stat-value" style="color:var(--orange);">'+mHM(tb)+'</div><div class="stat-label">Temps de pause</div></div>'+
-    '<div class="stat-card"><div class="stat-card-icon" style="background:var(--purple-light);color:var(--purple);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg></div><div class="stat-value" style="color:var(--purple);">'+(tp>0?mHM(Math.round(tw/tp)):'\u2014')+'</div><div class="stat-label">Moyenne / personne</div></div>';
-  var tbody=document.getElementById('rapportTableBody');
-  if(!f.length){tbody.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--text3);padding:32px;">Aucun pointage pour cette date</td></tr>';return;}
-  // Sort by type then name
-  f.sort(function(a,b){var ta=getWorkerType(a.workerId),tb2=getWorkerType(b.workerId);if(ta!==tb2)return ta==='interim'?-1:1;return a.workerName.localeCompare(b.workerName);});
-  var lastType='';
-  tbody.innerHTML=f.map(function(r){
-    var t=getWorkerType(r.workerId);
-    var sep='';
-    if(t!==lastType&&wId==='all'){var tmN={interim:'Int\u00e9rimaires',cdi:'CDI',cdd:'CDD'};sep='<tr><td colspan="7" style="background:var(--bg);padding:6px 16px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text2);">'+(tmN[t]||t)+'</td></tr>';lastType=t;}
-    var brks=r.breaks||[];
-    if(typeof brks==='string'){try{brks=JSON.parse(brks);}catch(e){brks=[];}}
-    if(!Array.isArray(brks))brks=[];
-    var bd=brks.map(function(b){return(b.start||'?')+' \u2192 '+(b.end||'...');}).join(', ')||'\u2014';
-    var depCell=r.departure?r.departure:'\u2014 <span style="font-size:10px;color:var(--orange);font-weight:600;">auto-clos</span>';
-    var pauseCellMin=cBM(r);
-    var forfaitM=appliedForfaitM(r);
-    var pauseCell=mHM(pauseCellMin);
-    if(forfaitM>0)pauseCell='1h00 <span style="font-size:10px;color:var(--text3);">forfait</span>';
-    return sep+'<tr><td><strong>'+r.workerName+'</strong>'+typeBadgeHtml(t)+'</td><td style="font-family:JetBrains Mono,monospace;">'+r.arrival+'</td><td style="font-family:JetBrains Mono,monospace;">'+depCell+'</td><td style="font-size:12px;">'+bd+'</td><td style="font-family:JetBrains Mono,monospace;">'+pauseCell+'</td><td style="font-family:JetBrains Mono,monospace;font-weight:700;color:var(--accent);">'+mHM(cWM(r))+'</td><td><button class="btn btn-outline btn-sm" onclick="openEditModal(\''+r.id+'\')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></td></tr>';
+// ═══ Rapport V2 — plages dates + filtres + export par agence ═══
+// Backend : GET /api/reports/data, /api/reports/export/{xlsx,pdf}.
+// Frontend : présets de plage + filtres type/agence/worker, tableau
+// agrégé worker, modale détail jour par jour au clic, 4 boutons export.
+
+var _rptCurrent={start:null,end:null,type:'all',agency:'',workerId:''};
+var _rptData=null;
+
+function rptFormatDateISO(d){
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+
+// Calcule {start, end} pour un préset donné (today, week, month, lastmonth).
+// Pour 'week' : lundi→dimanche (ISO 8601), considérant la semaine en cours.
+function rptComputePresetRange(name){
+  var now=new Date();
+  var today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  if(name==='today')return{start:rptFormatDateISO(today),end:rptFormatDateISO(today)};
+  if(name==='week'){
+    var dow=today.getDay();
+    var offset=(dow===0)?-6:(1-dow);
+    var mon=new Date(today);mon.setDate(today.getDate()+offset);
+    var sun=new Date(mon);sun.setDate(mon.getDate()+6);
+    return{start:rptFormatDateISO(mon),end:rptFormatDateISO(sun)};
+  }
+  if(name==='month'){
+    var first=new Date(today.getFullYear(),today.getMonth(),1);
+    var last=new Date(today.getFullYear(),today.getMonth()+1,0);
+    return{start:rptFormatDateISO(first),end:rptFormatDateISO(last)};
+  }
+  if(name==='lastmonth'){
+    var first2=new Date(today.getFullYear(),today.getMonth()-1,1);
+    var last2=new Date(today.getFullYear(),today.getMonth(),0);
+    return{start:rptFormatDateISO(first2),end:rptFormatDateISO(last2)};
+  }
+  // 'custom' : conserve les valeurs actuelles
+  return{start:_rptCurrent.start,end:_rptCurrent.end};
+}
+
+function rptSetPresetActive(name){
+  document.querySelectorAll('.rpt-preset').forEach(function(b){
+    b.classList.toggle('active',b.getAttribute('data-rpt-preset')===name);
+  });
+}
+
+function rptFormatHM(min){
+  if(min==null||isNaN(min))return '0h00';
+  var m=Math.max(0,Math.round(min));
+  return Math.floor(m/60)+'h'+String(m%60).padStart(2,'0');
+}
+
+// Initialisation : preset 'month' par défaut, peuple filtres workers + agencies.
+function enterRapportPage(){
+  if(!_rptCurrent.start){
+    var r=rptComputePresetRange('month');
+    _rptCurrent.start=r.start;_rptCurrent.end=r.end;
+    var sEl=document.getElementById('rptStart');if(sEl)sEl.value=r.start;
+    var eEl=document.getElementById('rptEnd');if(eEl)eEl.value=r.end;
+    rptSetPresetActive('month');
+  }
+  rptPopulateFilters();
+  rptLoad();
+}
+
+function rptPopulateFilters(){
+  // Workers + agencies depuis le cache local. Filtre type côté front pour
+  // ne pas exiger un round-trip API à chaque changement.
+  var workers=lW();
+  var agencies={};
+  workers.forEach(function(w){if(w.agency)agencies[w.agency]=true;});
+  var agencyList=Object.keys(agencies).sort();
+  var agSel=document.getElementById('rptAgency');
+  if(agSel){
+    var current=agSel.value;
+    agSel.innerHTML='<option value="">Toutes les agences</option>'+agencyList.map(function(a){
+      return '<option value="'+punchEscape(a)+'">'+punchEscape(a)+'</option>';
+    }).join('');
+    if(current)agSel.value=current;
+  }
+  var wSel=document.getElementById('rptWorker');
+  if(wSel){
+    var currentW=wSel.value;
+    var sortedW=workers.slice().sort(function(a,b){return a.name.localeCompare(b.name);});
+    wSel.innerHTML='<option value="">Tous les workers</option>'+sortedW.map(function(w){
+      return '<option value="'+parseInt(w.id,10)+'">'+punchEscape(w.name)+(w.agency?(' ('+punchEscape(w.agency)+')'):'')+'</option>';
+    }).join('');
+    if(currentW)wSel.value=currentW;
+  }
+}
+
+function rptReadCurrentParams(){
+  _rptCurrent.start=(document.getElementById('rptStart').value||_rptCurrent.start||'').trim();
+  _rptCurrent.end=(document.getElementById('rptEnd').value||_rptCurrent.end||'').trim();
+  _rptCurrent.type=document.getElementById('rptType').value||'all';
+  _rptCurrent.agency=(document.getElementById('rptAgency').value||'').trim();
+  _rptCurrent.workerId=(document.getElementById('rptWorker').value||'').trim();
+}
+
+function rptBuildQuery(extra){
+  var p=_rptCurrent;
+  var q='?start='+encodeURIComponent(p.start)+'&end='+encodeURIComponent(p.end);
+  if(p.type && p.type!=='all')q+='&type='+encodeURIComponent(p.type);
+  if(p.agency)q+='&agency='+encodeURIComponent(p.agency);
+  if(p.workerId)q+='&worker_id='+encodeURIComponent(p.workerId);
+  if(extra){
+    for(var k in extra){if(Object.prototype.hasOwnProperty.call(extra,k))q+='&'+k+'='+encodeURIComponent(extra[k]);}
+  }
+  return q;
+}
+
+async function rptLoad(){
+  rptReadCurrentParams();
+  if(!_rptCurrent.start||!_rptCurrent.end){
+    rptSetStatus('Plage de dates invalide','error');
+    return;
+  }
+  if(_rptCurrent.start>_rptCurrent.end){
+    rptSetStatus('Plage invalide (début > fin)','error');
+    return;
+  }
+  rptSetStatus('Chargement…','');
+  try{
+    var d=await apiGet('reports/data'+rptBuildQuery());
+    _rptData=d;
+    rptRender(d);
+    rptSetStatus('','');
+  }catch(e){
+    _rptData=null;
+    rptSetStatus('Erreur : '+(e.message||'inconnue'),'error');
+    var tb=document.getElementById('rptTableBody');
+    if(tb)tb.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--red);padding:32px;">'+punchEscape(e.message||'Erreur')+'</td></tr>';
+    document.getElementById('rptTotals').hidden=true;
+  }
+}
+
+function rptSetStatus(msg,kind){
+  var el=document.getElementById('rptStatus');
+  if(!el)return;
+  el.textContent=msg||'';
+  el.classList.toggle('error',kind==='error');
+}
+
+function rptRender(d){
+  var totals=d.totals||{};
+  var tEl=document.getElementById('rptTotals');
+  if(tEl){
+    if(!totals.workers_count){tEl.hidden=true;}
+    else{
+      tEl.hidden=false;
+      tEl.innerHTML='Total brut <strong>'+rptFormatHM(totals.brut_minutes)+'</strong>'+
+        ' • Total pauses <strong>'+rptFormatHM(totals.pauses_minutes)+'</strong>'+
+        ' • Total net <strong>'+rptFormatHM(totals.net_minutes)+'</strong>'+
+        '<span style="color:var(--text3);font-size:12px;margin-left:auto;">'+totals.workers_count+' worker(s) · '+totals.days_count+' jour(s) travaillé(s)</span>';
+    }
+  }
+  var tbody=document.getElementById('rptTableBody');
+  if(!tbody)return;
+  var rows=d.workers||[];
+  if(!rows.length){
+    tbody.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--text3);padding:32px;font-style:italic;">Aucun pointage sur cette plage. Ajustez les filtres ou la période.</td></tr>';
+    return;
+  }
+  var typeLabels={interim:'Intérim',cdi:'CDI',cdd:'CDD'};
+  tbody.innerHTML=rows.map(function(w){
+    return '<tr class="rpt-worker-row" data-action="rpt-open-detail" data-worker-id="'+parseInt(w.id,10)+'">'+
+      '<td><strong>'+punchEscape(w.name)+'</strong></td>'+
+      '<td>'+punchEscape(typeLabels[w.type]||w.type||'')+'</td>'+
+      '<td>'+(w.agency?punchEscape(w.agency):'<span style="color:var(--text3);">—</span>')+'</td>'+
+      '<td style="font-family:JetBrains Mono,monospace;">'+rptFormatHM(w.brut_minutes)+'</td>'+
+      '<td style="font-family:JetBrains Mono,monospace;">'+rptFormatHM(w.pauses_minutes)+'</td>'+
+      '<td style="font-family:JetBrains Mono,monospace;font-weight:700;color:var(--accent);">'+rptFormatHM(w.net_minutes)+'</td>'+
+      '<td style="font-family:JetBrains Mono,monospace;">'+parseInt(w.days_worked||0,10)+'</td>'+
+    '</tr>';
   }).join('');
 }
 
-function exportCSV(){
-  var date=document.getElementById('rapportDate').value||tS();
-  var wId=document.getElementById('rapportWorker').value;
-  var allRecs=lR().filter(function(r){return r.date===date;});
-  var f=filterRecsBySelection(allRecs,wId);
-  if(!f.length){toast('Rien \u00e0 exporter','warning');return;}
-  var csv='Salari\u00e9;Type;Date;Arriv\u00e9e;D\u00e9part;Pauses;Temps pause (min);Temps travaill\u00e9 (min)\n';
-  f.forEach(function(r){var bd=(r.breaks||[]).map(function(b){return b.start+'-'+(b.end||'...');}).join(' / ');var tmN={interim:'Int\u00e9rimaire',cdi:'CDI',cdd:'CDD'};csv+=r.workerName+';'+(tmN[getWorkerType(r.workerId)]||'')+';'+r.date+';'+(r.arrival||'')+';'+(r.departure||'')+';'+bd+';'+cBM(r)+';'+cWM(r)+'\n';});
-  var blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
-  var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='pointages_'+date+'.csv';a.click();toast('Export CSV t\u00e9l\u00e9charg\u00e9');
+function rptOpenDetail(workerId){
+  if(!_rptData||!_rptData.workers)return;
+  var w=_rptData.workers.find(function(x){return x.id===workerId;});
+  if(!w)return;
+  document.getElementById('rptDetailTitle').textContent='Détail '+w.name+' — '+_rptCurrent.start+' → '+_rptCurrent.end;
+  var body=document.getElementById('rptDetailBody');
+  if(!body)return;
+  var summary='<div style="font-size:13px;color:var(--text2);margin-bottom:12px;">Brut <strong>'+rptFormatHM(w.brut_minutes)+'</strong> · Pauses <strong>'+rptFormatHM(w.pauses_minutes)+'</strong> · Net <strong style="color:var(--accent);">'+rptFormatHM(w.net_minutes)+'</strong> · '+(w.days_worked||0)+' jour(s)</div>';
+  var days=(w.days||[]).slice().sort(function(a,b){return (a.date||'').localeCompare(b.date||'');});
+  var tableRows=days.map(function(day){
+    var brks=(day.pauses||[]).map(function(b){
+      if(!b||!b.start)return '';
+      return punchEscape(b.start+(b.end?(' → '+b.end):' → ?'));
+    }).filter(function(s){return s;}).join(', ')||'<span style="color:var(--text3);">—</span>';
+    var dep=day.departure?punchEscape(day.departure):(day.auto_closed?'<span style="color:var(--orange);font-size:11px;">auto-clos</span>':'<span style="color:var(--text3);">—</span>');
+    return '<tr><td class="num">'+punchEscape(day.date||'')+'</td><td class="num">'+punchEscape(day.arrival||'—')+'</td><td class="num">'+dep+'</td><td>'+brks+'</td><td class="num">'+rptFormatHM(day.brut_min)+'</td><td class="num">'+rptFormatHM(day.pauses_min)+'</td><td class="num" style="font-weight:700;color:var(--accent);">'+rptFormatHM(day.net_min)+'</td></tr>';
+  }).join('');
+  body.innerHTML=summary+'<table class="rpt-detail-table"><thead><tr><th>Date</th><th>Arrivée</th><th>Départ</th><th>Pauses</th><th>Brut</th><th>Pause</th><th>Net</th></tr></thead><tbody>'+tableRows+'</tbody></table>';
+  document.getElementById('rptDetailModal').classList.add('open');
 }
+
+function rptCloseDetail(){document.getElementById('rptDetailModal').classList.remove('open');}
+
+// Télécharge un blob (XLSX ou PDF) avec un filename forcé.
+function rptDownloadBlob(blob,filename){
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a');
+  a.href=url;a.download=filename;
+  document.body.appendChild(a);a.click();
+  setTimeout(function(){document.body.removeChild(a);URL.revokeObjectURL(url);},100);
+}
+
+async function rptExport(kind,groupByAgency){
+  rptReadCurrentParams();
+  if(!_rptCurrent.start||!_rptCurrent.end){
+    rptSetStatus('Plage de dates invalide','error');return;
+  }
+  rptSetStatus('Génération '+(kind==='xlsx'?'Excel':'PDF')+'…','');
+  rptSetActionsDisabled(true);
+  try{
+    var q=rptBuildQuery({group_by_agency:groupByAgency?'true':'false'});
+    var token=getToken();
+    var res=await fetch(API_BASE+'/reports/export/'+kind+q,{
+      headers:{'Authorization':'Bearer '+token}
+    });
+    if(!res.ok){
+      var msg='Erreur HTTP '+res.status;
+      try{var j=await res.json();if(j&&j.error)msg=j.error;}catch(_e){}
+      throw new Error(msg);
+    }
+    var blob=await res.blob();
+    var cd=res.headers.get('Content-Disposition')||'';
+    var match=/filename="?([^";]+)"?/i.exec(cd);
+    var filename=match?match[1]:('rapport.'+kind);
+    rptDownloadBlob(blob,filename);
+    rptSetStatus('Téléchargé','');
+    setTimeout(function(){rptSetStatus('','');},2000);
+  }catch(e){
+    rptSetStatus('Erreur export : '+(e.message||'inconnue'),'error');
+  }finally{
+    rptSetActionsDisabled(false);
+  }
+}
+
+function rptSetActionsDisabled(disabled){
+  document.querySelectorAll('#page-rapport [data-action]').forEach(function(b){
+    b.disabled=disabled;
+  });
+}
+
+// Event delegation panel + boutons + table (clic ligne worker → modal).
+if(document.getElementById('page-rapport')){
+  document.getElementById('page-rapport').addEventListener('click',function(e){
+    var preset=e.target.closest('button[data-rpt-preset]');
+    if(preset){
+      var name=preset.getAttribute('data-rpt-preset');
+      rptSetPresetActive(name);
+      if(name!=='custom'){
+        var r=rptComputePresetRange(name);
+        document.getElementById('rptStart').value=r.start;
+        document.getElementById('rptEnd').value=r.end;
+        rptLoad();
+      }
+      return;
+    }
+    var row=e.target.closest('tr[data-action="rpt-open-detail"]');
+    if(row){
+      var wid=parseInt(row.getAttribute('data-worker-id'),10);
+      rptOpenDetail(wid);
+      return;
+    }
+    var b=e.target.closest('[data-action]');
+    if(!b)return;
+    var act=b.getAttribute('data-action');
+    if(act==='rpt-refresh')rptLoad();
+    else if(act==='rpt-xlsx-agency')rptExport('xlsx',true);
+    else if(act==='rpt-pdf-agency')rptExport('pdf',true);
+    else if(act==='rpt-xlsx-all')rptExport('xlsx',false);
+    else if(act==='rpt-pdf-all')rptExport('pdf',false);
+  });
+  // Inputs date : bascule auto en preset custom.
+  ['rptStart','rptEnd'].forEach(function(id){
+    var el=document.getElementById(id);
+    if(el)el.addEventListener('change',function(){rptSetPresetActive('custom');});
+  });
+  // Filtres select : auto-reload au change.
+  ['rptType','rptAgency','rptWorker'].forEach(function(id){
+    var el=document.getElementById(id);
+    if(el)el.addEventListener('change',function(){rptLoad();});
+  });
+}
+
+// Modal détail close handler
+if(document.getElementById('rptDetailModal')){
+  document.getElementById('rptDetailModal').addEventListener('click',function(e){
+    if(e.target===this){rptCloseDetail();return;}
+    var b=e.target.closest('button[data-action="rpt-detail-close"]');
+    if(b)rptCloseDetail();
+  });
+}
+
 
 // ═══ HISTORIQUE ═══
 var histoPeriod='week';
@@ -2040,7 +2359,8 @@ async function renderHistorique(){
   tbody.innerHTML=rows.length?rows.join(''):'<tr><td colspan="7" style="text-align:center;color:var(--text3);padding:32px;">Aucune donn\u00e9e pour cette p\u00e9riode</td></tr>';
 }
 
-document.getElementById('rapportDate').value=tS();
+// (V2 : initialisation du rapport déléguée à enterRapportPage(), plus de
+// rapportDate input statique à pré-remplir au load.)
 
 // ═══ SCANNER / BADGE ═══
 var camStream=null;
