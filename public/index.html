@@ -1266,7 +1266,16 @@ async function apiRegenerateSecret(){
 function sW(w){/* no-op, use apiAddWorker/apiUpdateWorker */}
 function sR(r){/* no-op, use apiAddRecord/apiUpdateRecord */}
 
-function tS(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+// Date du jour côté Paris (aligné avec getParisDate() backend dans api.js).
+// Évite le bug "0 présents" quand le navigateur de la borne admin est dans un
+// fuseau différent (UTC, machine mal réglée, etc.) — les records sont stockés
+// avec records.date = getParisDate(), donc le filtre frontend doit utiliser la
+// même base.
+function tS(){return new Date().toLocaleDateString("sv-SE",{timeZone:"Europe/Paris"});}
+// Composantes {y, m, d} de la date courante en zone Paris (m = 1..12).
+// À utiliser partout où on partait de `new Date().getFullYear/getMonth/getDate()`
+// pour ancrer un calcul qui sera ensuite comparé à `records.date` (stocké Paris).
+function pNow(){var p=tS().split('-');return{y:parseInt(p[0],10),m:parseInt(p[1],10),d:parseInt(p[2],10)};}
 function nT(){var d=new Date();return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');}
 function gI(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
 
@@ -1593,8 +1602,9 @@ var detailWorkerId=null;
 
 function openWorkerDetail(id){
   detailWorkerId=id;
-  var now=new Date();
-  detailMonth={year:now.getFullYear(),month:now.getMonth()};
+  // Mois courant en zone Paris (le mois est ensuite comparé à r.date.substring(0,7)).
+  var pn=pNow();
+  detailMonth={year:pn.y,month:pn.m-1};
   renderWorkerDetail();
 }
 function closeWorkerDetail(){
@@ -1896,8 +1906,10 @@ function rptFormatDateISO(d){
 // Calcule {start, end} pour un préset donné (today, week, month, lastmonth).
 // Pour 'week' : lundi→dimanche (ISO 8601), considérant la semaine en cours.
 function rptComputePresetRange(name){
-  var now=new Date();
-  var today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  // Ancrage Paris (cf pNow) — sinon le preset "Aujourd'hui" et les boundaries
+  // de week/month/lastmonth divergent quand le navigateur n'est pas en Paris.
+  var pn=pNow();
+  var today=new Date(pn.y,pn.m-1,pn.d);
   if(name==='today')return{start:rptFormatDateISO(today),end:rptFormatDateISO(today)};
   if(name==='week'){
     var dow=today.getDay();
@@ -2202,7 +2214,8 @@ function getWeekDates(weekStr){
   // weekStr format: "2026-W16"
   var dates=[];
   if(!weekStr){
-    var now=new Date();var day=now.getDay()||7;
+    // Ancrage Paris : sinon la semaine courante peut shifter d'un jour aux boundaries.
+    var pn=pNow();var now=new Date(pn.y,pn.m-1,pn.d);var day=now.getDay()||7;
     var mon=new Date(now);mon.setDate(now.getDate()-day+1);
     for(var i=0;i<7;i++){var d=new Date(mon);d.setDate(mon.getDate()+i);dates.push(formatDate(d));}
     return dates;
@@ -2219,9 +2232,10 @@ function getWeekDates(weekStr){
 
 function getMonthDates(monthStr){
   var dates=[];
-  var now=new Date();
-  var year=monthStr?parseInt(monthStr.split('-')[0],10):now.getFullYear();
-  var month=monthStr?parseInt(monthStr.split('-')[1],10)-1:now.getMonth();
+  // Défaut "mois courant" ancré Paris pour matcher records.date.
+  var pn=pNow();
+  var year=monthStr?parseInt(monthStr.split('-')[0],10):pn.y;
+  var month=monthStr?parseInt(monthStr.split('-')[1],10)-1:pn.m-1;
   var daysInMonth=new Date(year,month+1,0).getDate();
   for(var i=1;i<=daysInMonth;i++){
     dates.push(year+'-'+String(month+1).padStart(2,'0')+'-'+String(i).padStart(2,'0'));
@@ -2241,13 +2255,13 @@ function initHistoSelects(){
   var w=lW();
   sel.innerHTML='<option value="all">Tous les salari\u00e9s</option>';
   w.forEach(function(x){sel.innerHTML+='<option value="'+x.id+'">'+x.name+'</option>';});
-  // Set current week
-  var now=new Date();
-  var oneJan=new Date(now.getFullYear(),0,1);
+  // Set current week — ancré Paris.
+  var pn=pNow();var now=new Date(pn.y,pn.m-1,pn.d);
+  var oneJan=new Date(pn.y,0,1);
   var days=Math.floor((now-oneJan)/(24*60*60*1000));
   var weekNum=Math.ceil((days+oneJan.getDay()+1)/7);
-  document.getElementById('histoWeek').value=now.getFullYear()+'-W'+String(weekNum).padStart(2,'0');
-  document.getElementById('histoMonth').value=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
+  document.getElementById('histoWeek').value=pn.y+'-W'+String(weekNum).padStart(2,'0');
+  document.getElementById('histoMonth').value=pn.y+'-'+String(pn.m).padStart(2,'0');
 }
 
 async function renderHistorique(){
@@ -4651,7 +4665,9 @@ function handleRhTile(docType){
 }
 
 function prevMonthYYYYMM(){
-  var d=new Date();d.setDate(1);d.setMonth(d.getMonth()-1);
+  // Ancré Paris : sinon au 1er du mois à minuit Paris, un navigateur en retard
+  // verrait "mois dernier" = mois d'il y a 2.
+  var pn=pNow();var d=new Date(pn.y,pn.m-1,1);d.setMonth(d.getMonth()-1);
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
 }
 
