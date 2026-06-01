@@ -203,13 +203,26 @@ body.borne-mode{overflow:hidden;height:100vh}
 .borne-clock{font-size:48px;font-family:JetBrains Mono,monospace;color:var(--text2);margin-top:32px;letter-spacing:4px}
 
 .borne-state-recognized{background:var(--green-light);transition:background .25s ease}
-.borne-state-recognized.is-exit{background:#fee2e2}
+/* UX v3 — palette par context (rouge réservé aux erreurs uniquement) */
+.borne-state-recognized.is-lunch-exit{background:#FEF3C7}
+.borne-state-recognized.is-mid-exit{background:#FEF3C7}
+.borne-state-recognized.is-day-exit{background:#DBEAFE}
+.borne-state-recognized.is-return{background:#dcfce7}
+/* Conservé : ancien modifier .is-exit utilisé en fallback rétrocompat */
+.borne-state-recognized.is-exit{background:#FEF3C7}
 .borne-avatar{width:200px;height:200px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto;font-size:80px;font-weight:800;color:#fff;letter-spacing:-2px;line-height:1;font-family:inherit;background:var(--green);box-shadow:0 8px 24px rgba(0,0,0,0.08);animation:borneAvatarIn 220ms ease-out}
 .borne-avatar.entry{background:var(--green)}
-.borne-avatar.exit{background:var(--red)}
+.borne-avatar.amber{background:#F59E0B}
+.borne-avatar.navy{background:#1E40AF}
+.borne-avatar.exit{background:#F59E0B}/* fallback ascendant : si .exit reste appliqué, on évite le rouge */
 @keyframes borneAvatarIn{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:scale(1)}}
 .borne-success-greet{font-size:72px;font-weight:800;color:var(--green);text-align:center;line-height:1.1;margin-top:24px}
-.borne-state-recognized.is-exit .borne-success-greet{color:var(--red)}
+/* UX v3 — couleur greet par context */
+.borne-state-recognized.is-lunch-exit .borne-success-greet,
+.borne-state-recognized.is-mid-exit   .borne-success-greet{color:#F59E0B}
+.borne-state-recognized.is-day-exit   .borne-success-greet{color:#1E40AF}
+/* Fallback rétrocompat (ancien modifier) : ambre, pas rouge */
+.borne-state-recognized.is-exit .borne-success-greet{color:#F59E0B}
 .borne-success-action{font-size:32px;color:var(--text2);margin-top:8px;text-align:center;font-weight:500}
 .borne-success-message{font-size:22px;color:var(--text2);margin:12px auto 0;font-style:italic;text-align:center;max-width:600px;line-height:1.4}
 .borne-success-total{font-size:24px;color:var(--text2);margin-top:16px;text-align:center;font-weight:600}
@@ -942,30 +955,54 @@ var ACTION_LABELS={
   departure:'D\u00e9part'
 };
 
-// ═══ Catalogue greets + messages contextuels (borne UX v2) ═══
+// ═══ Catalogue greets + messages contextuels (borne UX v3) ═══
 // Pioche aléatoire à chaque scan pour humaniser l'écran de confirmation.
-// 5 tranches horaires (morning/midday/afternoon/evening/night) × 2 actions
-// (entry/exit). Touches spéciales lundi matin / vendredi PM / week-end avec
-// 50% de chance de remplacer le message standard (sinon variété conservée).
+// 5 contextes (entry_morning / lunch_exit / mid_day_exit / lunch_return /
+// day_exit) × 5 tranches horaires (morning/midday/afternoon/evening/night).
+// Touches spéciales lundi matin / vendredi PM / week-end avec 50% de chance
+// de remplacer le message standard (sinon variété conservée). Les contextes
+// "courts" (lunch_exit, mid_day_exit, lunch_return) ne dépendent pas du slot
+// en pratique — on duplique sur tous les slots pour homogénéité du lookup.
 var BORNE_MESSAGES={
   greets:{
-    entry:{
+    entry_morning:{
       morning:['Bonjour','Salut','Hello','Coucou'],
       midday:['Bonjour','Re-bonjour','Salut','Bon retour'],
       afternoon:['Bonjour','Re-bonjour','Salut','Bon retour'],
       evening:['Bonsoir','Bonjour','Hello'],
       night:['Bonsoir','Bon courage','Hello']
     },
-    exit:{
-      morning:['\u00c0 tout \u00e0 l\u2019heure','\u00c0 plus tard','Bonne pause'],
-      midday:['Bon app\u00e9tit','Bonne pause','\u00c0 tout \u00e0 l\u2019heure'],
-      afternoon:['Bonne fin de journ\u00e9e','\u00c0 tout \u00e0 l\u2019heure','Bonne pause'],
+    lunch_exit:{
+      morning:['Bon app\u00e9tit','\u00c0 tout \u00e0 l\u2019heure','Bonne pause repas'],
+      midday:['Bon app\u00e9tit','\u00c0 tout \u00e0 l\u2019heure','Bonne pause repas'],
+      afternoon:['Bon app\u00e9tit','\u00c0 tout \u00e0 l\u2019heure','Bonne pause repas'],
+      evening:['Bon app\u00e9tit','\u00c0 tout \u00e0 l\u2019heure','Bonne pause repas'],
+      night:['Bon app\u00e9tit','\u00c0 tout \u00e0 l\u2019heure','Bonne pause repas']
+    },
+    mid_day_exit:{
+      morning:['\u00c0 tout \u00e0 l\u2019heure','\u00c0 plus tard','\u00c0 tant\u00f4t'],
+      midday:['\u00c0 tout \u00e0 l\u2019heure','\u00c0 plus tard','\u00c0 tant\u00f4t'],
+      afternoon:['\u00c0 tout \u00e0 l\u2019heure','\u00c0 plus tard','\u00c0 tant\u00f4t'],
+      evening:['\u00c0 tout \u00e0 l\u2019heure','\u00c0 plus tard','\u00c0 tant\u00f4t'],
+      night:['\u00c0 tout \u00e0 l\u2019heure','\u00c0 plus tard','\u00c0 tant\u00f4t']
+    },
+    lunch_return:{
+      morning:['Bon retour','Rebonjour','Te revoil\u00e0','Salut'],
+      midday:['Bon retour','Rebonjour','Te revoil\u00e0','Salut'],
+      afternoon:['Bon retour','Rebonjour','Te revoil\u00e0','Salut'],
+      evening:['Bon retour','Rebonjour','Te revoil\u00e0','Salut'],
+      night:['Bon retour','Rebonjour','Te revoil\u00e0','Salut']
+    },
+    day_exit:{
+      morning:['Bonne fin de journ\u00e9e','\u00c0 demain','Bonne soir\u00e9e'],
+      midday:['Bonne fin de journ\u00e9e','\u00c0 demain','Bonne soir\u00e9e'],
+      afternoon:['Bonne fin de journ\u00e9e','\u00c0 demain','Bonne soir\u00e9e'],
       evening:['Bonne soir\u00e9e','\u00c0 demain','Bonne fin de journ\u00e9e'],
       night:['Bonne nuit','Bonne soir\u00e9e','\u00c0 demain']
     }
   },
   messages:{
-    entry:{
+    entry_morning:{
       morning:[
         'Bonne journ\u00e9e \u00e0 toi !',
         'Pr\u00eat(e) pour aujourd\u2019hui ?',
@@ -1012,21 +1049,144 @@ var BORNE_MESSAGES={
         'Bonne nuit, fais attention \u00e0 toi'
       ]
     },
-    exit:{
+    lunch_exit:{
       morning:[
-        'Bonne pause !',
-        '\u00c0 tout \u00e0 l\u2019heure',
-        'Reviens vite',
-        'Profite bien',
-        'Bonne pause, repose-toi'
-      ],
-      midday:[
-        'Bon app\u00e9tit !',
-        'Bon repas, profite bien',
-        'R\u00e9gale-toi 🍽️',
+        'R\u00e9gale-toi \ud83c\udf7d\ufe0f',
+        'Bon app\u00e9tit, profite bien',
         'Mange bien, \u00e0 tout \u00e0 l\u2019heure',
         'Bonne pause d\u00e9jeuner',
-        'Profite bien de ta pause'
+        'Profite bien de ta pause',
+        'Bon repas, on se retrouve plus tard',
+        'Pause m\u00e9rit\u00e9e \ud83c\udf7d\ufe0f',
+        'Savoure ton repas'
+      ],
+      midday:[
+        'R\u00e9gale-toi \ud83c\udf7d\ufe0f',
+        'Bon app\u00e9tit, profite bien',
+        'Mange bien, \u00e0 tout \u00e0 l\u2019heure',
+        'Bonne pause d\u00e9jeuner',
+        'Profite bien de ta pause',
+        'Bon repas, on se retrouve plus tard',
+        'Pause m\u00e9rit\u00e9e \ud83c\udf7d\ufe0f',
+        'Savoure ton repas'
+      ],
+      afternoon:[
+        'R\u00e9gale-toi \ud83c\udf7d\ufe0f',
+        'Bon app\u00e9tit, profite bien',
+        'Mange bien, \u00e0 tout \u00e0 l\u2019heure',
+        'Bonne pause d\u00e9jeuner',
+        'Profite bien de ta pause',
+        'Bon repas, on se retrouve plus tard',
+        'Pause m\u00e9rit\u00e9e \ud83c\udf7d\ufe0f',
+        'Savoure ton repas'
+      ],
+      evening:[
+        'R\u00e9gale-toi \ud83c\udf7d\ufe0f',
+        'Bon app\u00e9tit, profite bien',
+        'Mange bien, \u00e0 tout \u00e0 l\u2019heure',
+        'Bonne pause d\u00e9jeuner',
+        'Profite bien de ta pause',
+        'Bon repas, on se retrouve plus tard'
+      ],
+      night:[
+        'R\u00e9gale-toi \ud83c\udf7d\ufe0f',
+        'Bon app\u00e9tit, profite bien',
+        'Mange bien, \u00e0 tout \u00e0 l\u2019heure',
+        'Bonne pause d\u00e9jeuner'
+      ]
+    },
+    mid_day_exit:{
+      morning:[
+        'Reviens vite',
+        '\u00c0 tout \u00e0 l\u2019heure',
+        'Profite bien de ta pause',
+        'Prends soin de toi',
+        'Bonne pause',
+        'On t\u2019attend, \u00e0 tout \u00e0 l\u2019heure'
+      ],
+      midday:[
+        'Reviens vite',
+        '\u00c0 tout \u00e0 l\u2019heure',
+        'Profite bien de ta pause',
+        'Prends soin de toi',
+        'Bonne pause',
+        'On t\u2019attend, \u00e0 tout \u00e0 l\u2019heure'
+      ],
+      afternoon:[
+        'Reviens vite',
+        '\u00c0 tout \u00e0 l\u2019heure',
+        'Profite bien de ta pause',
+        'Prends soin de toi',
+        'Bonne pause',
+        'On t\u2019attend, \u00e0 tout \u00e0 l\u2019heure'
+      ],
+      evening:[
+        'Reviens vite',
+        '\u00c0 tout \u00e0 l\u2019heure',
+        'Profite bien de ta pause',
+        'Prends soin de toi',
+        'Bonne pause'
+      ],
+      night:[
+        'Reviens vite',
+        '\u00c0 tout \u00e0 l\u2019heure',
+        'Prends soin de toi',
+        'Bonne pause'
+      ]
+    },
+    lunch_return:{
+      morning:[
+        'Reprends en douceur',
+        'Content de te revoir',
+        'Allez, on attaque l\u2019apr\u00e8s-midi',
+        'Bon retour parmi nous',
+        'Bienvenue pour le 2e round \ud83d\udcaa',
+        'Reprends bien'
+      ],
+      midday:[
+        'Reprends en douceur',
+        'Content de te revoir',
+        'Allez, on attaque l\u2019apr\u00e8s-midi',
+        'Bon retour parmi nous',
+        'Bienvenue pour le 2e round \ud83d\udcaa',
+        'Reprends bien'
+      ],
+      afternoon:[
+        'Reprends en douceur',
+        'Content de te revoir',
+        'Allez, on attaque l\u2019apr\u00e8s-midi',
+        'Bon retour parmi nous',
+        'Bienvenue pour le 2e round \ud83d\udcaa',
+        'Reprends bien'
+      ],
+      evening:[
+        'Reprends en douceur',
+        'Content de te revoir',
+        'Bon retour parmi nous',
+        'Reprends bien'
+      ],
+      night:[
+        'Reprends en douceur',
+        'Bon retour parmi nous',
+        'Reprends bien'
+      ]
+    },
+    day_exit:{
+      morning:[
+        'Bravo pour aujourd\u2019hui \ud83d\udc4f',
+        'Tu peux \u00eatre fier(e) du boulot',
+        'Bonne fin de journ\u00e9e',
+        'Rentre bien chez toi',
+        'Profite bien de ta journ\u00e9e',
+        'Repose-toi, tu l\u2019as m\u00e9rit\u00e9'
+      ],
+      midday:[
+        'Bravo pour aujourd\u2019hui \ud83d\udc4f',
+        'Tu peux \u00eatre fier(e) du boulot',
+        'Bonne fin de journ\u00e9e',
+        'Rentre bien chez toi',
+        'Profite bien de ta journ\u00e9e',
+        'Repose-toi, tu l\u2019as m\u00e9rit\u00e9'
       ],
       afternoon:[
         'Bonne fin de journ\u00e9e',
@@ -1034,21 +1194,22 @@ var BORNE_MESSAGES={
         'Rentre bien chez toi',
         'Repose-toi, tu l\u2019as m\u00e9rit\u00e9',
         'Bonne soir\u00e9e, \u00e0 demain !',
-        'Bravo pour aujourd\u2019hui 👏',
+        'Bravo pour aujourd\u2019hui \ud83d\udc4f',
         'Tu peux \u00eatre fier(e) du boulot',
         'Bonne soir\u00e9e, prends soin de toi'
       ],
       evening:[
-        'Bonne soir\u00e9e, repose-toi bien 🌙',
+        'Bonne soir\u00e9e, repose-toi bien \ud83c\udf19',
         'Tu l\u2019as m\u00e9rit\u00e9, profite',
         'Bonne nuit, \u00e0 demain',
         'Repose-toi bien, bravo pour aujourd\u2019hui',
         'Bonne fin de soir\u00e9e, prends soin de toi',
-        'Excellente soir\u00e9e \u00e0 toi'
+        'Excellente soir\u00e9e \u00e0 toi',
+        'Bravo pour aujourd\u2019hui \ud83d\udc4f'
       ],
       night:[
         'Bonne nuit, dors bien',
-        'Repose-toi, tu l\u2019as m\u00e9rit\u00e9 🌙',
+        'Repose-toi, tu l\u2019as m\u00e9rit\u00e9 \ud83c\udf19',
         'Belle nuit, \u00e0 tr\u00e8s vite',
         'Va te coucher, bonne nuit'
       ]
@@ -3148,16 +3309,32 @@ async function borneFinalizeClock(auth){
     return;
   }
   var act=clockResp.action||'entry';
+  // UX v3 — context renvoyé par /api/clock. Fallback action→context si
+  // backend ancien (pas encore redéployé). Compat ascendante : un payload
+  // sans context retombe sur entry_morning/day_exit historiques.
+  var ctx=clockResp.context||borneActionToContext(act);
   borneShowState('recognized',{
     name:auth.worker.name,
     action:act,
+    context:ctx,
     time:clockResp.time||'',
     total_worked_minutes:(typeof clockResp.total_worked_minutes==='number')?clockResp.total_worked_minutes:null
   });
-  if(act==='exit'||act==='departure')borneBeepExit();
-  else borneBeepEntry();
+  // UX v3 — bip différencié selon context (cf borneBeepLunch / borneBeepDayEnd).
+  if(ctx==='lunch_exit'||ctx==='mid_day_exit')borneBeepLunch();
+  else if(ctx==='day_exit')borneBeepDayEnd();
+  else borneBeepEntry(); // entry_morning + lunch_return
   borneLogout(auth.token);
   borneBackTo('idle',BORNE_RECOGNIZED_MS);
+}
+
+// UX v3 — fallback action → context quand le backend n'a pas (encore) renvoyé
+// le champ context. exit → day_exit (le pire cas avant : tous les exits étaient
+// rouges/anxiogènes ; au moins on garde un bleu nuit cohérent). entry →
+// entry_morning. Toute action inconnue → entry_morning (défensif).
+function borneActionToContext(action){
+  if(action==='exit'||action==='departure')return 'day_exit';
+  return 'entry_morning';
 }
 
 // V2 — borneDecideAction supprimé : le client n'a plus à décider, le serveur
@@ -3212,25 +3389,37 @@ function borneShowState(state,payload){
     el.hidden=!el.classList.contains('borne-state-'+state);
   });
   if(state==='recognized' && payload){
-    var isExit=(payload.action==='exit'||payload.action==='departure');
+    // UX v3 — context drive palette + greet + message. Fallback action si
+    // payload.context absent (rétrocompat / appel direct sans context).
+    var ctx=payload.context||borneActionToContext(payload.action);
     var recogEl=screen.querySelector('.borne-state-recognized');
-    if(recogEl)recogEl.classList.toggle('is-exit',isExit);
-    // Avatar : initiales + couleur entry/exit
+    if(recogEl){
+      // Nettoie les anciens modifiers pour éviter le cumul entre cycles.
+      recogEl.classList.remove('is-exit','is-lunch-exit','is-mid-exit','is-day-exit','is-return');
+      if(ctx==='lunch_exit')recogEl.classList.add('is-lunch-exit');
+      else if(ctx==='mid_day_exit')recogEl.classList.add('is-mid-exit');
+      else if(ctx==='day_exit')recogEl.classList.add('is-day-exit');
+      else if(ctx==='lunch_return')recogEl.classList.add('is-return');
+      // entry_morning : aucun modifier — garde le green-light par défaut.
+    }
+    // Avatar : initiales + couleur selon context (vert/ambre/bleu nuit).
     var avatar=document.getElementById('borneRecogAvatar');
     if(avatar){
       avatar.textContent=borneInitials(payload.name||'');
-      avatar.classList.remove('entry','exit');
-      avatar.classList.add(isExit?'exit':'entry');
+      avatar.classList.remove('entry','exit','amber','navy');
+      if(ctx==='day_exit')avatar.classList.add('navy');
+      else if(ctx==='lunch_exit'||ctx==='mid_day_exit')avatar.classList.add('amber');
+      else avatar.classList.add('entry'); // entry_morning + lunch_return
     }
     var greet=document.getElementById('borneRecogGreet');
     var act=document.getElementById('borneRecogAction');
     var msgEl=document.getElementById('borneRecogMessage');
     var total=document.getElementById('borneRecogTotal');
-    // Borne UX v2 : greet + message contextuel selon heure/jour/action.
+    // Borne UX v3 : greet + message contextuel selon context/slot/jour.
     // Pioche aléatoire à chaque scan pour humaniser sans devenir répétitif.
     var nowDt=new Date();
     var slot=borneGetTimeSlot(nowDt);
-    var greetWord=borneGetGreet(payload.action,slot);
+    var greetWord=borneGetGreet(ctx,slot);
     var firstName=borneFirstName(payload.name||'');
     if(greet)greet.textContent=greetWord+(firstName?(' '+firstName):'')+' !';
     if(act){
@@ -3242,7 +3431,7 @@ function borneShowState(state,payload){
       act.textContent=label?label+' enregistr\u00e9'+(isFem?'e':'')+time:time;
     }
     if(msgEl){
-      var contextual=borneGetMessage(payload.action,slot,nowDt);
+      var contextual=borneGetMessage(ctx,slot,nowDt);
       if(contextual){
         msgEl.textContent=contextual;
         msgEl.hidden=false;
@@ -3250,10 +3439,11 @@ function borneShowState(state,payload){
         msgEl.hidden=true;
       }
     }
-    // Cumul heures travaillées : affiché uniquement à la sortie ET si la
-    // valeur est un nombre valide (graceful fallback côté backend).
+    // UX v3 — cumul heures travaillées affiché UNIQUEMENT en fin de journée
+    // (context === 'day_exit'), pas à chaque sortie. Évite "tu as travaillé
+    // 3h12" en pleine journée quand le worker part juste fumer.
     if(total){
-      if(isExit && typeof payload.total_worked_minutes==='number' && payload.total_worked_minutes>0){
+      if(ctx==='day_exit' && typeof payload.total_worked_minutes==='number' && payload.total_worked_minutes>0){
         total.textContent='Aujourd\u2019hui : '+borneFormatHours(payload.total_worked_minutes)+' travaill\u00e9es';
         total.hidden=false;
       }else{
@@ -3307,37 +3497,49 @@ function bornePickRandom(arr,fallback){
   return arr[Math.floor(Math.random()*arr.length)];
 }
 
-// Greet ("Bonjour", "Bonsoir", "À tout à l'heure"…) selon action + slot.
-function borneGetGreet(action,slot){
-  var actKey=(action==='exit'||action==='departure')?'exit':'entry';
-  var arr=BORNE_MESSAGES.greets[actKey] && BORNE_MESSAGES.greets[actKey][slot];
-  var fallback=(actKey==='exit')?'\u00c0 bient\u00f4t':'Bonjour';
-  return bornePickRandom(arr,fallback);
+// UX v3 — Greet selon context + slot. Catalogue indexé par les 5 contextes
+// (entry_morning / lunch_exit / mid_day_exit / lunch_return / day_exit).
+function borneGetGreet(context,slot){
+  var arr=BORNE_MESSAGES.greets[context] && BORNE_MESSAGES.greets[context][slot];
+  // Fallback minimal selon le "type" du context (sortie-like vs entrée-like).
+  var isExitLike=(context==='lunch_exit'||context==='mid_day_exit'||context==='day_exit');
+  var fb=isExitLike?'\u00c0 bient\u00f4t':'Bonjour';
+  return bornePickRandom(arr,fb);
 }
 
-// Message contextuel. Touches spéciales (lundi matin, vendredi PM, week-end)
-// avec 50% de chance de remplacer le message standard pour conserver de la
-// variété. Fallback minimal si tout casse.
-function borneGetMessage(action,slot,now){
-  var actKey=(action==='exit'||action==='departure')?'exit':'entry';
+// UX v3 — Message contextuel par context + slot. Touches spéciales :
+//   monday_morning  → entry_morning + slot=morning + jour=lundi
+//   friday_pm       → day_exit + slot=afternoon|evening + jour=vendredi
+//   weekend_entry   → entry_morning + jour=samedi|dimanche
+//   weekend_exit    → day_exit + jour=samedi|dimanche
+// Aucune touche spéciale pour lunch_exit/mid_day_exit/lunch_return : le jour
+// de la semaine ne change rien au sens d'une pause repas. 50% de chance
+// d'appliquer la touche spéciale (sinon variété conservée).
+function borneGetMessage(context,slot,now){
   var day=now.getDay();
   var pickSpecial=Math.random()<0.5;
   if(pickSpecial){
-    if(actKey==='entry' && day===1 && slot==='morning'){
+    if(context==='entry_morning' && day===1 && slot==='morning'){
       return bornePickRandom(BORNE_MESSAGES.special.monday_morning,null)||'';
     }
-    if(actKey==='exit' && day===5 && (slot==='afternoon'||slot==='evening')){
+    if(context==='day_exit' && day===5 && (slot==='afternoon'||slot==='evening')){
       return bornePickRandom(BORNE_MESSAGES.special.friday_pm,null)||'';
     }
     if(day===0 || day===6){
-      var spKey=(actKey==='entry')?'weekend_entry':'weekend_exit';
-      return bornePickRandom(BORNE_MESSAGES.special[spKey],null)||'';
+      if(context==='entry_morning'){
+        return bornePickRandom(BORNE_MESSAGES.special.weekend_entry,null)||'';
+      }
+      if(context==='day_exit'){
+        return bornePickRandom(BORNE_MESSAGES.special.weekend_exit,null)||'';
+      }
     }
   }
-  var arr=BORNE_MESSAGES.messages[actKey] && BORNE_MESSAGES.messages[actKey][slot];
-  var fallback=(actKey==='exit')?'\u00c0 bient\u00f4t !':'Bonne journ\u00e9e !';
-  return bornePickRandom(arr,fallback);
+  var arr=BORNE_MESSAGES.messages[context] && BORNE_MESSAGES.messages[context][slot];
+  var isExitLike=(context==='lunch_exit'||context==='mid_day_exit'||context==='day_exit');
+  var fb=isExitLike?'\u00c0 bient\u00f4t !':'Bonne journ\u00e9e !';
+  return bornePickRandom(arr,fb);
 }
+
 
 // errorKind contrôle le timer auto-back ET la visibilité du bouton Réessayer.
 //   'transient' (défaut)        — carte/réseau/clock : back idle 4s, pas de bouton
@@ -3393,14 +3595,22 @@ function borneBeepTone(freq,durMs,vol){
   }catch(e){}
 }
 
-// Bips différenciés (v1 UX) :
-//   entrée  → 2 tons aigus successifs (validation positive)
-//   sortie  → 1 ton grave long (fin de cycle)
-//   erreur  → 1 ton très grave court (rejet)
+// Bips différenciés (UX v3) :
+//   entrée (entry_morning + lunch_return)  → 2 tons aigus successifs (positif)
+//   pause  (lunch_exit + mid_day_exit)     → 1 ton médium court (neutre/temporaire)
+//   fin    (day_exit)                      → 2 tons descendants doux (fin de cycle)
+//   erreur                                 → 1 ton très grave court (rejet)
+// borneBeepExit conservé en fallback rétrocompat si un caller passe action='exit'
+// sans context — sélection effective faite dans borneFinalizeClock selon ctx.
 // borneBeep() conservé en alias d'entrée pour rétrocompat éventuelle d'appels.
 function borneBeepEntry(){
   borneBeepTone(440,80,0.15);
   setTimeout(function(){borneBeepTone(880,80,0.15);},130);
+}
+function borneBeepLunch(){borneBeepTone(440,200,0.15);}
+function borneBeepDayEnd(){
+  borneBeepTone(880,180,0.12);
+  setTimeout(function(){borneBeepTone(440,260,0.12);},200);
 }
 function borneBeepExit(){borneBeepTone(220,250,0.15);}
 function borneBeepError(){borneBeepTone(150,150,0.15);}

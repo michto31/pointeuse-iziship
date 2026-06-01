@@ -1007,7 +1007,7 @@ exports.handler = async function (event) {
       // Auto-clôture défensive des records orphelins du jour précédent.
       await closeOrphanPointages(clkWorkerId);
 
-      var clkWorker = await sql1("SELECT id, name, agency, last_clock_state FROM workers WHERE id=$1", [clkWorkerId]);
+      var clkWorker = await sql1("SELECT id, name, agency, last_clock_state, sched_out FROM workers WHERE id=$1", [clkWorkerId]);
       if (!clkWorker) return err("Worker introuvable", 404);
       var clkCurrentState = clkWorker.last_clock_state || "idle";
       // V2 : on_break legacy → traité comme at_work (worker a une session ouverte)
@@ -1037,7 +1037,7 @@ exports.handler = async function (event) {
               params: [clkWorkerId]
             }
           ]);
-          return json({ ok: true, action: "entry", time: clkTime, record: entryTx[0][0] }, 201);
+          return json({ ok: true, action: "entry", context: "entry_morning", time: clkTime, record: entryTx[0][0] }, 201);
         }
         if (clkTodayRec.departure) {
           // Cas 3 (retour de pause) ou split day soir : record clos existe.
@@ -1057,12 +1057,17 @@ exports.handler = async function (event) {
               params: [clkWorkerId]
             }
           ]);
-          return json({ ok: true, action: "entry", time: clkTime, record: reopenTx[0][0] });
+          // UX v3 — context : `lunch_return` si la pause a duré >= 15 min,
+          // sinon `entry_morning` (probablement double-clic, on ne salue pas
+          // comme un retour de pause). Pas de borne supérieure (cf F.4).
+          var reopenPauseMin = (hhmmToMin(clkTime) - hhmmToMin(clkTodayRec.departure) + 1440) % 1440;
+          var reopenContext = (reopenPauseMin >= 15) ? "lunch_return" : "entry_morning";
+          return json({ ok: true, action: "entry", context: reopenContext, time: clkTime, record: reopenTx[0][0] });
         }
         // État incohérent : state=idle mais record du jour ouvert (departure null).
         // Défensif : bascule juste le state, laisse le record tel quel.
         await sql("UPDATE workers SET last_clock_state='at_work' WHERE id=$1", [clkWorkerId]);
-        return json({ ok: true, action: "entry", time: clkTime, record: clkTodayRec, warning: "state_mismatch_entry" });
+        return json({ ok: true, action: "entry", context: "entry_morning", time: clkTime, record: clkTodayRec, warning: "state_mismatch_entry" });
       }
 
       // clkCurrentState === "at_work" → EXIT
@@ -1082,18 +1087,44 @@ exports.handler = async function (event) {
         ]);
         // Ghost record : arrival=departure → 0 minute travaillée mais on
         // expose le champ pour cohérence d'affichage borne.
-        return json({ ok: true, action: "exit", time: clkTime, record: ghostTx[0][0], total_worked_minutes: 0, warning: "state_mismatch_exit" });
+        return json({ ok: true, action: "exit", context: "day_exit", time: clkTime, record: ghostTx[0][0], total_worked_minutes: 0, warning: "state_mismatch_exit" });
       }
       // Cas normal : ferme departure à NOW. Si un break est ouvert (héritage
       // V1 ou bug), on le ferme aussi à NOW avec flag auto_closed.
       var clkExitBreaks = clkTodayRec.breaks;
       if (typeof clkExitBreaks === "string") { try { clkExitBreaks = JSON.parse(clkExitBreaks); } catch (e) { clkExitBreaks = []; } }
       if (!Array.isArray(clkExitBreaks)) clkExitBreaks = [];
+      // UX v3 — compte les breaks CLOS avant l'auto-close défensif. Un break
+      // clos = cycle pause+retour complet déjà fait aujourd'hui. Sert à
+      // détecter "2e sortie de la journée" sans confondre avec un break
+      // ouvert legacy (rare, V1).
+      var clkFullBreaksCount = 0;
+      for (var clkFb = 0; clkFb < clkExitBreaks.length; clkFb++) {
+        if (clkExitBreaks[clkFb] && clkExitBreaks[clkFb].end) clkFullBreaksCount++;
+      }
       var autoClosedBreak = false;
       if (clkExitBreaks.length > 0 && !clkExitBreaks[clkExitBreaks.length - 1].end) {
         clkExitBreaks[clkExitBreaks.length - 1].end = clkTime;
         clkExitBreaks[clkExitBreaks.length - 1].auto_closed = true;
         autoClosedBreak = true;
+      }
+      // UX v3 — context : 'lunch_exit' (11h30-14h, 1re sortie), 'day_exit'
+      // (2e sortie OU dans la fenêtre sched_out ±1h), sinon 'mid_day_exit'.
+      // Wrap minuit non géré pour isNearSchedOut → workers de nuit auront
+      // 'day_exit' approximatif (limitation acceptée, cf F.3).
+      var clkSchedOutHHMM = (clkWorker.sched_out && /^\d{2}:\d{2}$/.test(clkWorker.sched_out)) ? clkWorker.sched_out : "17:00";
+      var clkExitMinutes = hhmmToMin(clkTime);
+      var clkSchedOutMin = hhmmToMin(clkSchedOutHHMM);
+      var clkIsInLunchWindow = (clkTime >= "11:30" && clkTime <= "14:00");
+      var clkIsNearSchedOut = Math.abs(clkExitMinutes - clkSchedOutMin) <= 60;
+      var clkIsSecondExit = clkFullBreaksCount >= 1;
+      var clkExitContext;
+      if (clkIsSecondExit || clkIsNearSchedOut) {
+        clkExitContext = "day_exit";
+      } else if (clkIsInLunchWindow) {
+        clkExitContext = "lunch_exit";
+      } else {
+        clkExitContext = "mid_day_exit";
       }
       var exitTx = await sqlTx([
         {
@@ -1123,6 +1154,7 @@ exports.handler = async function (event) {
       return json({
         ok: true,
         action: "exit",
+        context: clkExitContext,
         time: clkTime,
         record: exitTx[0][0],
         auto_closed_break: autoClosedBreak,
